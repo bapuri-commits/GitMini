@@ -2,6 +2,11 @@ plugins {
     id 'java'
 }
 
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
 group = 'kr.bapuri'
 version = '1.0-SNAPSHOT'
 

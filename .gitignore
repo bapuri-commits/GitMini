@@ -33,6 +33,10 @@ bin/
 ### VS Code ###
 .vscode/
 
+### Cursor IDE ###
+.cursor/*
+!.cursor/rules/
+
 ### OS files ###
 .DS_Store
 Thumbs.db
