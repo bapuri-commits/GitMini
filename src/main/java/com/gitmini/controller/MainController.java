@@ -229,6 +229,8 @@ public class MainController {
         stagedListView.setItems(FXCollections.observableArrayList());
         diffFileLabel.setText("Diff");
         diffContent.getChildren().clear();
+        commitMessageArea.clear();
+        amendCheckBox.setSelected(false);
         updateStatusBar(repo);
 
         // 상세 정보 비동기 로드 (파일 목록, 브랜치 등)
