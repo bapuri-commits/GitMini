@@ -157,6 +157,17 @@ public class GitService {
     }
 
     /**
+     * upstream이 설정되지 않은 브랜치를 원격에 push하면서 upstream을 자동 설정한다.
+     * {@code git push -u origin <branch>}
+     */
+    public void pushSetUpstream(Path repoPath, String branchName) {
+        GitResult result = executor.execute(repoPath,
+                GitCommandBuilder.git().push().arg("-u").arg("origin").arg(branchName).build(),
+                GitExecutor.NETWORK_TIMEOUT_SECONDS);
+        requireSuccess(result, "push -u");
+    }
+
+    /**
      * 원격에서 변경사항을 가져오고 병합한다.
      */
     public void pull(Path repoPath) {

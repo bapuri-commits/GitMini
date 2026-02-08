@@ -109,7 +109,16 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 - **CellFactory**: 시각(HH:mm:ss), 성공/실패 아이콘(✓/✗), 명령어, 소요시간(ms) 한 줄 표시. 실패 시 빨간색.
 - **실시간 갱신**: `GitMiniApp`에서 `GitCommandRecord`를 EventBus로 직접 발행 → MainController가 `GitCommandRecord.class` 구독 → `commandLogListView.getItems().add(0, record)` 로 최신이 위에.
 - **최대 500건** 유지 (초과 시 오래된 것 제거).
-- **우클릭 컨텍스트 메뉴**: "명령어 복사" / "출력 복사" — 클립보드에 복사.
+- **우클릭 컨텍스트 메뉴**: "명령어 복사" / "출력 복사" — ClipboardContent 사용.
+- **코드 감사 반영**: 클립보드 복사 `ClipboardContent`로 교체, 시각 표시 `DateTimeFormatter` 사용.
+- **Push upstream 자동 설정**: upstream 미설정 시 `git push -u origin <브랜치>` 자동 실행, 에러 메시지 "원격 없음" vs "upstream 없음" 구분.
+
+### Step 11: 상태바 + 비동기 피드백 + 토스트
+
+- **로딩 인디케이터**: `setStatus("...중...")`처럼 "..."으로 끝나는 메시지 → `progressIndicator` 자동 표시. 완료 시 자동 숨김.
+- **`progressIndicator` managed 바인딩**: 숨김 시 상태바에서 공간 차지하지 않음.
+- **토스트 효과**: 완료/에러 메시지 표시 후 **5초 뒤 자동으로 "✓ Ready"** 복원. 중간에 새 메시지가 오면 이전 타이머 무효화 (`statusFadeGeneration`).
+- **기존 `setStatus()` 호환**: 모든 기존 호출이 자동으로 로딩/완료를 구분. 코드 변경 최소화.
 
 ---
 
@@ -125,8 +134,7 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 
 | Step | 내용 | 상태 |
 |------|------|------|
-| 10 | Command Log 패널 | 완료 |
-| 11 | 상태바 + 비동기 피드백 + 토스트 | 대기 |
+| 11 | 상태바 + 비동기 피드백 + 토스트 | 완료 |
 | 12 | 컨텍스트 메뉴 + 키보드 단축키 | 대기 |
 | 13 | 드래그 & 드롭 + 자동 Fetch | 대기 |
 

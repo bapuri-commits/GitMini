@@ -137,6 +137,9 @@ public class MainController {
     /** 마지막으로 폴더를 선택한 디렉토리 (레포 추가 시 기억). */
     private File lastBrowsedDir = null;
 
+    /** Command Log EventBus 핸들러 (구독 해제용 참조). */
+    private java.util.function.Consumer<GitCommandRecord> commandLogEventHandler;
+
     /** 검색 필터 적용 전 전체 목록 (최대 MAX_FILE_LIST_SIZE개). 검색 시 여기서 필터링. */
     private ObservableList<FileChange> unstagedFullList = FXCollections.observableArrayList();
     private ObservableList<FileChange> stagedFullList = FXCollections.observableArrayList();
@@ -150,6 +153,8 @@ public class MainController {
         // StackPane 화면 전환: managed를 visible에 바인딩
         welcomePane.managedProperty().bind(welcomePane.visibleProperty());
         repoDetailPane.managedProperty().bind(repoDetailPane.visibleProperty());
+        // 상태바 로딩 인디케이터: 숨김 시 공간 차지 안 함
+        progressIndicator.managedProperty().bind(progressIndicator.visibleProperty());
 
         // 사이드바: Custom ListCell 설정
         repoListView.setCellFactory(listView -> new RepoListCell(this::removeRepo));
@@ -190,6 +195,59 @@ public class MainController {
                 setText(shortHash + "  " + item.message() + "  " + dateStr);
             }
         });
+
+        // Command Log: CellFactory — 시각, 성공/실패, 명령어, 소요시간 표시
+        java.time.format.DateTimeFormatter cmdTimeFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
+        commandLogListView.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(GitCommandRecord item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setStyle("");
+                    return;
+                }
+                String time = item.timestamp() != null ? item.timestamp().format(cmdTimeFormat) : "";
+                String icon = item.success() ? "✓" : "✗";
+                String dur = item.durationMs() + "ms";
+                setText(time + "  " + icon + "  " + item.command() + "  (" + dur + ")");
+                setStyle(item.success() ? "" : "-fx-text-fill: #e06060;");
+            }
+        });
+
+        // Command Log: 우클릭 → 복사
+        ContextMenu cmdLogMenu = new ContextMenu();
+        MenuItem copyCmd = new MenuItem("명령어 복사");
+        copyCmd.setOnAction(e -> {
+            GitCommandRecord sel = commandLogListView.getSelectionModel().getSelectedItem();
+            if (sel != null) {
+                javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+                cc.putString(sel.command());
+                javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+            }
+        });
+        MenuItem copyOutput = new MenuItem("출력 복사");
+        copyOutput.setOnAction(e -> {
+            GitCommandRecord sel = commandLogListView.getSelectionModel().getSelectedItem();
+            if (sel != null && sel.output() != null) {
+                javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+                cc.putString(sel.output());
+                javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+            }
+        });
+        cmdLogMenu.getItems().addAll(copyCmd, copyOutput);
+        commandLogListView.setContextMenu(cmdLogMenu);
+
+        // Command Log: EventBus 구독 — git 명령 실행마다 실시간 추가 (원본 GitCommandRecord)
+        commandLogEventHandler = record -> {
+            commandLogListView.getItems().add(0, record);
+            // 최대 500건 유지
+            if (commandLogListView.getItems().size() > 500) {
+                commandLogListView.getItems().remove(500, commandLogListView.getItems().size());
+            }
+        };
+        com.gitmini.event.EventBus.getInstance().subscribe(
+                GitCommandRecord.class, commandLogEventHandler);
 
         // 브랜치 ComboBox: 변경 이벤트 → 브랜치 전환
         branchComboBox.valueProperty().addListener(
@@ -543,8 +601,46 @@ public class MainController {
 
     // ========== 상태바 / 피드백 ==========
 
-    private void setStatus(String message) {
+    /** 작업 진행 중 상태 (로딩 인디케이터 표시 + 메시지). */
+    private void setStatusLoading(String message) {
+        progressIndicator.setVisible(true);
         statusLabel.setText(message);
+    }
+
+    /** 작업 완료 상태 (로딩 숨김 + 메시지 + 5초 후 Ready 자동 복원). */
+    private void setStatusDone(String message) {
+        progressIndicator.setVisible(false);
+        statusLabel.setText(message);
+        // "✓ Ready" 자체일 때는 페이드 불필요
+        if (!"✓ Ready".equals(message)) {
+            scheduleStatusFade();
+        }
+    }
+
+    /** 일반 상태 메시지 설정. 진행 중("...") 이면 로딩 표시, 아니면 완료 처리. */
+    private void setStatus(String message) {
+        if (message != null && message.endsWith("...")) {
+            setStatusLoading(message);
+        } else {
+            setStatusDone(message);
+        }
+    }
+
+    /**
+     * 상태바 메시지를 5초 후 "✓ Ready"로 자동 복원한다 (토스트 효과).
+     * 중간에 다른 메시지가 설정되면 이전 타이머는 무효화된다.
+     */
+    private int statusFadeGeneration = 0;
+
+    private void scheduleStatusFade() {
+        final int gen = ++statusFadeGeneration;
+        javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(5));
+        pause.setOnFinished(e -> {
+            if (gen == statusFadeGeneration) {
+                statusLabel.setText("✓ Ready");
+            }
+        });
+        pause.play();
     }
 
     private void updateStatusBar(Repository repo) {
@@ -646,24 +742,43 @@ public class MainController {
     private static String mapRemoteErrorMessage(String rawMessage) {
         if (rawMessage == null) return "알 수 없는 오류";
         String msg = rawMessage.trim().toLowerCase();
-        if (msg.contains("no upstream") || (msg.contains("upstream") && msg.contains("not set"))
-                || msg.contains("현재 브랜치에 위쪽 추적 브랜치가 없습니다")) {
-            return "이 레포에는 원격 저장소가 없습니다.\n\nPush하려면 터미널에서 'git remote add origin <URL>' 로 원격을 추가한 뒤 다시 시도해 주세요.";
+
+        // ── 원격 저장소 자체가 없음 ──
+        if (msg.contains("no configured push destination")
+                || msg.contains("does not have any remotes")
+                || msg.contains("no remote repository specified")) {
+            return "이 레포에는 원격 저장소가 없습니다.\n\n터미널에서 'git remote add origin <URL>' 로 원격을 추가하세요.";
         }
+        // ── upstream 브랜치 미설정 (원격은 있지만 이 브랜치에 추적 정보 없음) ──
+        if (msg.contains("no upstream")
+                || (msg.contains("upstream") && msg.contains("not set"))
+                || msg.contains("no tracking information")
+                || msg.contains("specify which branch you want to merge")
+                || msg.contains("현재 브랜치에 위쪽 추적 브랜치가 없습니다")) {
+            return "현재 브랜치에 원격 추적 정보가 없습니다.\n\n터미널에서 아래 명령으로 설정할 수 있습니다:\n  git push -u origin <브랜치이름>";
+        }
+
+        // ── 네트워크 ──
         if (msg.contains("could not resolve host") || msg.contains("unknown host") || msg.contains("name or service not known")) {
-            return "네트워크 연결을 확인하세요. (호스트를 찾을 수 없습니다)";
+            return "네트워크 연결을 확인하세요.\n(호스트를 찾을 수 없습니다)";
         }
         if (msg.contains("connection refused") || msg.contains("timed out") || msg.contains("connection timed out")) {
-            return "네트워크 연결을 확인하세요. (연결이 거부되었거나 시간이 초과되었습니다)";
+            return "네트워크 연결을 확인하세요.\n(연결이 거부되었거나 시간이 초과되었습니다)";
         }
+
+        // ── 인증 ──
         if (msg.contains("authentication failed") || msg.contains("permission denied") || msg.contains("access denied")) {
-            return "인증에 실패했습니다. 자격 증명을 확인하세요.";
+            return "인증에 실패했습니다.\n자격 증명(비밀번호·토큰)을 확인하세요.";
         }
+
+        // ── 충돌 / non-fast-forward ──
         if (msg.contains("rejected") && msg.contains("non-fast-forward")) {
-            return "원격에 새 커밋이 있습니다. 먼저 Pull 한 뒤 다시 Push 하세요.";
+            return "원격에 새 커밋이 있습니다.\n먼저 Pull 한 뒤 다시 Push 하세요.";
         }
-        if (msg.contains("no configured push destination") || msg.contains("does not have any remotes")) {
-            return "이 레포에는 원격 저장소가 없습니다.\n\n터미널에서 'git remote add origin <URL>' 로 원격을 추가한 뒤 다시 시도해 주세요.";
+
+        // ── 너무 긴 메시지 축약 ──
+        if (rawMessage.length() > 300) {
+            return rawMessage.substring(0, 300) + "\n\n... (메시지 축약됨)";
         }
         return rawMessage;
     }
@@ -851,10 +966,30 @@ public class MainController {
                     refreshRepoDetailWithStatus(targetRepo, "✓ Push 완료");
                 },
                 error -> {
-                    setRemoteButtonsDisable(false);
-                    log.error("Push 실패", error);
-                    showErrorAlert("Push 실패", mapRemoteErrorMessage(error.getMessage()));
-                    setStatus("Push 실패");
+                    String errMsg = error.getMessage() != null ? error.getMessage().toLowerCase() : "";
+                    // upstream 미설정 시 자동으로 push -u origin <브랜치> 재시도
+                    if (errMsg.contains("no upstream") || errMsg.contains("has no upstream branch")) {
+                        log.info("upstream 미설정 → push -u origin {} 자동 실행", targetRepo.getCurrentBranch());
+                        setStatus("upstream 설정 중...");
+                        taskManager.run(
+                                () -> { gitService.pushSetUpstream(repoPath, targetRepo.getCurrentBranch()); return null; },
+                                result2 -> {
+                                    setRemoteButtonsDisable(false);
+                                    refreshRepoDetailWithStatus(targetRepo, "✓ Push 완료 (upstream 자동 설정)");
+                                },
+                                error2 -> {
+                                    setRemoteButtonsDisable(false);
+                                    log.error("Push -u 실패", error2);
+                                    showErrorAlert("Push 실패", mapRemoteErrorMessage(error2.getMessage()));
+                                    setStatus("Push 실패");
+                                }
+                        );
+                    } else {
+                        setRemoteButtonsDisable(false);
+                        log.error("Push 실패", error);
+                        showErrorAlert("Push 실패", mapRemoteErrorMessage(error.getMessage()));
+                        setStatus("Push 실패");
+                    }
                 }
         );
     }

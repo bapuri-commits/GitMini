@@ -123,8 +123,10 @@ public class GitMiniApp extends Application {
         repositoryManagerInstance = repositoryManager;
 
         // Command Log: 모든 git 명령 실행 시 EventBus로 발행 (Step 10 UI에서 구독)
-        gitExecutor.addCommandListener(record -> Platform.runLater(() ->
-                EventBus.getInstance().publish(toOperationEvent(record))));
+        gitExecutor.addCommandListener(record -> Platform.runLater(() -> {
+                EventBus.getInstance().publish(record);  // 원본 GitCommandRecord 직접 발행
+                EventBus.getInstance().publish(toOperationEvent(record));  // 기존 이벤트도 유지
+        }));
 
         // FXML 로드
         FXMLLoader loader = new FXMLLoader(
