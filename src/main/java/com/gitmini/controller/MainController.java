@@ -144,6 +144,9 @@ public class MainController {
     private ObservableList<FileChange> unstagedFullList = FXCollections.observableArrayList();
     private ObservableList<FileChange> stagedFullList = FXCollections.observableArrayList();
 
+    /** 자동 Fetch 타이머. */
+    private javafx.animation.Timeline autoFetchTimeline;
+
     // ========== 초기화 ==========
 
     @FXML
@@ -277,11 +280,51 @@ public class MainController {
         branchComboBox.valueProperty().addListener(
                 (obs, oldBranch, newBranch) -> onBranchChanged(newBranch));
 
+        // 사이드바: 드래그 & 드롭으로 레포 추가
+        sidebar.setOnDragOver(event -> {
+            if (event.getDragboard().hasFiles()) {
+                event.acceptTransferModes(javafx.scene.input.TransferMode.LINK);
+            }
+            event.consume();
+        });
+        sidebar.setOnDragDropped(event -> {
+            var db = event.getDragboard();
+            if (db.hasFiles()) {
+                RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
+                TaskManager taskManager = GitMiniApp.getTaskManager();
+                if (repoManager != null && taskManager != null) {
+                    int count = 0;
+                    for (File f : db.getFiles()) {
+                        if (f.isDirectory()) {
+                            final String name = f.getName();
+                            final File dir = f;
+                            count++;
+                            final int c = count;
+                            taskManager.run(
+                                    () -> { repoManager.add(dir.toPath()); return null; },
+                                    r -> loadRepoListWithStatus("✓ 드롭으로 레포 " + c + "개 추가"),
+                                    err -> {
+                                        log.warn("드롭 레포 추가 실패: {}: {}", name, err.getMessage());
+                                        setStatus("레포 추가 실패: " + name);
+                                    }
+                            );
+                        }
+                    }
+                    if (count > 0) setStatus("레포 추가 중...");
+                }
+            }
+            event.setDropCompleted(true);
+            event.consume();
+        });
+
         // 초기 상태
         showWelcome();
 
         // 키보드 단축키 등록 (Scene 생성 후 지연 실행)
         Platform.runLater(this::setupKeyboardShortcuts);
+
+        // 자동 Fetch: 설정된 간격(분)으로 선택된 레포를 백그라운드 fetch
+        startAutoFetch();
 
         // 등록된 레포 목록 로드 (비동기)
         loadRepoList();
@@ -1286,6 +1329,45 @@ public class MainController {
     }
 
     // ========== 키보드 단축키 ==========
+
+    // ========== 자동 Fetch ==========
+
+    /** 설정된 간격(분)으로 선택된 레포를 백그라운드 fetch한다. 원격 없는 레포는 스킵. */
+    private void startAutoFetch() {
+        com.gitmini.config.ConfigManager configManager = GitMiniApp.getConfigManager();
+        int intervalMin = 5;
+        if (configManager != null) {
+            intervalMin = configManager.load().getAutoFetchIntervalMinutes();
+        }
+        if (intervalMin <= 0) intervalMin = 5;
+
+        autoFetchTimeline = new javafx.animation.Timeline(
+                new javafx.animation.KeyFrame(javafx.util.Duration.minutes(intervalMin), e -> doAutoFetch())
+        );
+        autoFetchTimeline.setCycleCount(javafx.animation.Animation.INDEFINITE);
+        autoFetchTimeline.play();
+        log.info("자동 Fetch 시작: {}분 간격", intervalMin);
+    }
+
+    private void doAutoFetch() {
+        if (selectedRepo == null || !selectedRepo.isHasRemote()) return;
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        log.debug("자동 Fetch 실행: {}", targetRepo.getName());
+        taskManager.run(
+                () -> { gitService.fetch(repoPath); return null; },
+                result -> {
+                    refreshRepoDetailWithStatus(targetRepo, "✓ 자동 Fetch 완료");
+                    log.debug("자동 Fetch 완료: {}", targetRepo.getName());
+                },
+                error -> log.debug("자동 Fetch 실패 (무시): {}", error.getMessage())
+        );
+    }
 
     /**
      * Scene에 키보드 단축키를 등록한다.

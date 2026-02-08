@@ -126,6 +126,11 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 - **Staged 우클릭**: "Unstage" — `onUnstage()` 호출, "탐색기에서 열기".
 - **키보드 단축키**: Ctrl+Enter(Commit), Ctrl+Shift+P(Push), Ctrl+Shift+L(Pull), Ctrl+Shift+F(Fetch).
 
+### Step 13: 드래그 & 드롭 + 자동 Fetch
+
+- **드래그 & 드롭**: 사이드바에 폴더를 드롭하면 레포 추가. 여러 폴더 동시 드롭 가능. `isDirectory` 필터.
+- **자동 Fetch**: `AppConfig.autoFetchIntervalMinutes`(기본 5분) 간격으로 선택된 레포를 백그라운드 fetch. 원격 없는 레포는 스킵. 실패 시 무시(사용자 방해 없음).
+
 ---
 
 ## Phase 3 워크플로
@@ -142,7 +147,7 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 |------|------|------|
 | 11 | 상태바 + 비동기 피드백 + 토스트 | 완료 |
 | 12 | 컨텍스트 메뉴 + 키보드 단축키 | 완료 |
-| 13 | 드래그 & 드롭 + 자동 Fetch | 대기 |
+| 13 | 드래그 & 드롭 + 자동 Fetch | 완료 |
 
 ---
 
