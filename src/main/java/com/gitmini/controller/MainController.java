@@ -1370,7 +1370,7 @@ public class MainController {
         setStatus("경로 복사됨: " + selected.path());
     }
 
-    /** 선택된 파일을 OS 탐색기에서 연다. */
+    /** 선택된 파일을 OS 탐색기에서 연다 (파일 선택 상태로). */
     private void openSelectedFileInExplorer(boolean fromStaged) {
         FileChange selected = fromStaged
                 ? stagedListView.getSelectionModel().getSelectedItem()
@@ -1378,12 +1378,18 @@ public class MainController {
         if (selected == null || selectedRepo == null) return;
 
         try {
-            Path filePath = Path.of(selectedRepo.getPath(), selected.path());
-            Path dir = filePath.getParent();
-            if (dir != null && java.nio.file.Files.isDirectory(dir)) {
-                java.awt.Desktop.getDesktop().open(dir.toFile());
+            Path filePath = Path.of(selectedRepo.getPath(), selected.path()).toAbsolutePath().normalize();
+            if (java.nio.file.Files.exists(filePath)) {
+                // Windows: explorer /select,<파일> → 해당 파일이 선택된 상태로 탐색기 열림
+                Runtime.getRuntime().exec(new String[]{"explorer", "/select,", filePath.toString()});
             } else {
-                java.awt.Desktop.getDesktop().open(Path.of(selectedRepo.getPath()).toFile());
+                // 파일이 삭제된 경우 등 → 부모 폴더 열기
+                Path dir = filePath.getParent();
+                if (dir != null && java.nio.file.Files.isDirectory(dir)) {
+                    Runtime.getRuntime().exec(new String[]{"explorer", dir.toString()});
+                } else {
+                    Runtime.getRuntime().exec(new String[]{"explorer", selectedRepo.getPath()});
+                }
             }
         } catch (Exception e) {
             log.error("탐색기 열기 실패: {}", selected.path(), e);
