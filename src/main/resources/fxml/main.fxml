@@ -1,14 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import javafx.geometry.Insets?>
+<?import javafx.geometry.Orientation?>
 <?import javafx.scene.control.Button?>
+<?import javafx.scene.control.CheckBox?>
+<?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.ProgressIndicator?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.SplitPane?>
+<?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TitledPane?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
 <?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.StackPane?>
 <?import javafx.scene.layout.VBox?>
-<?import javafx.geometry.Insets?>
 
 <BorderPane xmlns="http://javafx.com/javafx/21"
             xmlns:fx="http://javafx.com/fxml/1"
@@ -18,7 +27,9 @@
     <center>
         <SplitPane fx:id="mainSplitPane" dividerPositions="0.2">
 
-            <!-- ========== 사이드바 ========== -->
+            <!-- ================================================================ -->
+            <!-- 사이드바: 레포 목록 + 추가/Clone 버튼                              -->
+            <!-- ================================================================ -->
             <VBox fx:id="sidebar" styleClass="sidebar" minWidth="200" maxWidth="400">
 
                 <Label text="레포지토리" styleClass="sidebar-header"/>
@@ -26,6 +37,7 @@
                 <ListView fx:id="repoListView" VBox.vgrow="ALWAYS"/>
 
                 <HBox styleClass="sidebar-actions" alignment="CENTER" spacing="8">
+                    <padding><Insets top="8" right="12" bottom="8" left="12"/></padding>
                     <Button text="+ 추가" onAction="#onAddRepo"
                             HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
                     <Button text="Clone" onAction="#onCloneRepo"
@@ -34,24 +46,138 @@
 
             </VBox>
 
-            <!-- ========== 메인 콘텐츠 영역 ========== -->
-            <VBox fx:id="mainContent" styleClass="main-content" alignment="CENTER">
+            <!-- ================================================================ -->
+            <!-- 메인 콘텐츠: StackPane으로 welcomePane / repoDetailPane 전환       -->
+            <!-- ================================================================ -->
+            <StackPane fx:id="mainContent">
 
-                <Label fx:id="welcomeLabel"
-                       text="레포지토리를 선택하세요"
-                       styleClass="welcome-text"/>
+                <!-- ===== Welcome Pane (레포 미선택 시) ===== -->
+                <VBox fx:id="welcomePane" alignment="CENTER" spacing="8">
+                    <Label fx:id="welcomeLabel"
+                           text="레포지토리를 선택하세요"
+                           styleClass="welcome-text"/>
+                    <Label text="사이드바에서 레포를 선택하거나, '+ 추가' 버튼으로 레포를 등록하세요."
+                           styleClass="welcome-hint"/>
+                </VBox>
 
-            </VBox>
+                <!-- ===== Repo Detail Pane (레포 선택 시) ===== -->
+                <VBox fx:id="repoDetailPane" visible="false" spacing="0">
+
+                    <!-- ── 액션 바: 레포 이름 + 브랜치 + Push/Pull/Fetch ── -->
+                    <HBox fx:id="actionBar" styleClass="action-bar" alignment="CENTER_LEFT" spacing="8">
+                        <padding><Insets top="6" right="12" bottom="6" left="12"/></padding>
+                        <Label fx:id="repoNameLabel" text="" styleClass="repo-name"/>
+                        <Separator orientation="VERTICAL" prefHeight="20"/>
+                        <ComboBox fx:id="branchComboBox" promptText="브랜치" prefWidth="160"/>
+                        <Button fx:id="newBranchBtn" text="+" onAction="#onNewBranch"
+                                styleClass="small-btn" mnemonicParsing="false"/>
+                        <Pane HBox.hgrow="ALWAYS"/>
+                        <Label fx:id="aheadBehindLabel" text="" styleClass="ahead-behind"/>
+                        <Button fx:id="fetchBtn" text="Fetch ⟳" onAction="#onFetch" mnemonicParsing="false"/>
+                        <Button fx:id="pullBtn" text="Pull ↓" onAction="#onPull" mnemonicParsing="false"/>
+                        <Button fx:id="pushBtn" text="Push ↑" onAction="#onPush" mnemonicParsing="false"/>
+                    </HBox>
+
+                    <Separator/>
+
+                    <!-- ── 콘텐츠 영역: 파일 변경 + Diff (리사이즈 가능) ── -->
+                    <SplitPane fx:id="contentSplitPane" orientation="VERTICAL"
+                               dividerPositions="0.45" VBox.vgrow="ALWAYS">
+
+                        <!-- 파일 변경 영역: Unstaged | 버튼 | Staged -->
+                        <HBox styleClass="file-changes-area" spacing="4">
+                            <padding><Insets top="8" right="8" bottom="4" left="8"/></padding>
+
+                            <!-- Unstaged 파일 목록 -->
+                            <VBox HBox.hgrow="ALWAYS" spacing="4">
+                                <Label text="변경된 파일" styleClass="section-header"/>
+                                <ListView fx:id="unstagedListView" VBox.vgrow="ALWAYS"/>
+                            </VBox>
+
+                            <!-- Stage / Unstage 버튼 -->
+                            <VBox alignment="CENTER" spacing="4" minWidth="36">
+                                <padding><Insets top="20" right="0" bottom="0" left="0"/></padding>
+                                <Button fx:id="stageAllBtn" text="▶▶" onAction="#onStageAll"
+                                        maxWidth="Infinity" styleClass="stage-btn" mnemonicParsing="false"/>
+                                <Button fx:id="stageBtn" text="▶" onAction="#onStage"
+                                        maxWidth="Infinity" styleClass="stage-btn" mnemonicParsing="false"/>
+                                <Button fx:id="unstageBtn" text="◀" onAction="#onUnstage"
+                                        maxWidth="Infinity" styleClass="stage-btn" mnemonicParsing="false"/>
+                                <Button fx:id="unstageAllBtn" text="◀◀" onAction="#onUnstageAll"
+                                        maxWidth="Infinity" styleClass="stage-btn" mnemonicParsing="false"/>
+                            </VBox>
+
+                            <!-- Staged 파일 목록 -->
+                            <VBox HBox.hgrow="ALWAYS" spacing="4">
+                                <Label text="스테이징된 파일" styleClass="section-header"/>
+                                <ListView fx:id="stagedListView" VBox.vgrow="ALWAYS"/>
+                            </VBox>
+                        </HBox>
+
+                        <!-- Diff 뷰어 -->
+                        <VBox styleClass="diff-area" spacing="0">
+                            <HBox alignment="CENTER_LEFT" styleClass="diff-header" spacing="8">
+                                <padding><Insets top="4" right="8" bottom="4" left="8"/></padding>
+                                <Label fx:id="diffFileLabel" text="Diff" styleClass="section-header"/>
+                            </HBox>
+                            <ScrollPane fx:id="diffScrollPane" fitToWidth="true" VBox.vgrow="ALWAYS">
+                                <VBox fx:id="diffContent" styleClass="diff-content"/>
+                            </ScrollPane>
+                        </VBox>
+
+                    </SplitPane>
+
+                    <Separator/>
+
+                    <!-- ── 커밋 영역 ── -->
+                    <VBox fx:id="commitArea" styleClass="commit-area" spacing="6">
+                        <padding><Insets top="8" right="12" bottom="8" left="12"/></padding>
+                        <TextArea fx:id="commitMessageArea"
+                                  promptText="커밋 메시지를 입력하세요"
+                                  prefRowCount="3" wrapText="true"/>
+                        <HBox alignment="CENTER_LEFT" spacing="8">
+                            <CheckBox fx:id="amendCheckBox" text="Amend"/>
+                            <Pane HBox.hgrow="ALWAYS"/>
+                            <Button fx:id="commitBtn" text="Commit" onAction="#onCommit"
+                                    styleClass="accent" mnemonicParsing="false"/>
+                        </HBox>
+                    </VBox>
+
+                    <Separator/>
+
+                    <!-- ── 커밋 히스토리 (접이식) ── -->
+                    <TitledPane fx:id="commitHistoryPane" text="커밋 히스토리"
+                                expanded="false" animated="true" styleClass="bottom-pane">
+                        <ListView fx:id="commitHistoryListView" prefHeight="120"/>
+                    </TitledPane>
+
+                    <!-- ── Command Log (접이식) ── -->
+                    <TitledPane fx:id="commandLogPane" text="Command Log"
+                                expanded="false" animated="true" styleClass="bottom-pane">
+                        <ListView fx:id="commandLogListView" prefHeight="120"
+                                  styleClass="command-log"/>
+                    </TitledPane>
+
+                </VBox>
+
+            </StackPane>
 
         </SplitPane>
     </center>
 
-    <!-- ========== 하단 상태바 ========== -->
+    <!-- ================================================================ -->
+    <!-- 하단 상태바                                                        -->
+    <!-- ================================================================ -->
     <bottom>
         <HBox fx:id="statusBar" styleClass="status-bar" alignment="CENTER_LEFT" spacing="8">
+            <padding><Insets top="4" right="12" bottom="4" left="12"/></padding>
+            <ProgressIndicator fx:id="progressIndicator"
+                               prefWidth="14" prefHeight="14" visible="false"/>
             <Label fx:id="statusLabel" text="✓ Ready"/>
             <Pane HBox.hgrow="ALWAYS"/>
-            <Label fx:id="branchLabel" text=""/>
+            <Label fx:id="branchStatusLabel" text=""/>
+            <Separator orientation="VERTICAL" prefHeight="14"/>
+            <Label fx:id="changesCountLabel" text=""/>
         </HBox>
     </bottom>
 

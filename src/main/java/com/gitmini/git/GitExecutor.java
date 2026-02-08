@@ -113,7 +113,7 @@ public class GitExecutor {
                 long durationMs = System.currentTimeMillis() - startTime;
                 String timeoutMsg = String.format("타임아웃: %d초 초과", timeoutSeconds);
                 GitResult result = new GitResult(commandString, -1, "", timeoutMsg, durationMs);
-                recordCommand(result);
+                recordCommand(result, workingDir);
                 throw new GitExecutionException(
                         String.format("Git 명령 타임아웃 (%d초): %s", timeoutSeconds, commandString),
                         -1, timeoutMsg);
@@ -139,7 +139,7 @@ public class GitExecutor {
             long durationMs = System.currentTimeMillis() - startTime;
 
             GitResult result = new GitResult(commandString, exitCode, stdout, stderr, durationMs);
-            recordCommand(result);
+            recordCommand(result, workingDir);
 
             if (exitCode != 0) {
                 log.debug("Git 명령 실패: {} (exit={}, stderr={})", commandString, exitCode, stderr);
@@ -154,7 +154,7 @@ public class GitExecutor {
         } catch (IOException e) {
             long durationMs = System.currentTimeMillis() - startTime;
             GitResult result = new GitResult(commandString, -1, "", e.getMessage(), durationMs);
-            recordCommand(result);
+            recordCommand(result, workingDir);
             throw new GitExecutionException(
                     "Git 프로세스 실행 실패: " + e.getMessage(), e);
         } catch (InterruptedException e) {
@@ -164,7 +164,7 @@ public class GitExecutor {
         } catch (Exception e) {
             long durationMs = System.currentTimeMillis() - startTime;
             GitResult result = new GitResult(commandString, -1, "", e.getMessage(), durationMs);
-            recordCommand(result);
+            recordCommand(result, workingDir);
             throw new GitExecutionException(
                     "Git 명령 실행 중 오류: " + e.getMessage(), e);
         }
@@ -256,9 +256,13 @@ public class GitExecutor {
 
     // ========== Command Log ==========
 
-    private void recordCommand(GitResult result) {
+    private void recordCommand(GitResult result, Path workingDir) {
+        String repoPath = workingDir != null
+                ? workingDir.toAbsolutePath().normalize().toString()
+                : "";
         GitCommandRecord record = new GitCommandRecord(
                 result.command(),
+                repoPath,
                 LocalDateTime.now(),
                 result.isSuccess(),
                 result.durationMs(),

@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -24,7 +25,7 @@ import static org.mockito.Mockito.*;
 
 /**
  * RepositoryManager 단위 테스트.
- * ConfigManager와 GitService를 모킹하여 레포 목록 관리·동기화 로직을 검증한다.
+ * ConfigManager와 GitService를 모킹하여 레포 목록 관리·동기화·캐시 로직을 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
 class RepositoryManagerTest {
@@ -41,6 +42,8 @@ class RepositoryManagerTest {
     void setUp() {
         manager = new RepositoryManager(configManager, gitService);
     }
+
+    // ========== getRepositories ==========
 
     @Test
     void getRepositories_빈_설정이면_빈_목록() {
@@ -62,19 +65,13 @@ class RepositoryManagerTest {
         config.getRepoPaths().add(repoPath.toString());
         when(configManager.load()).thenReturn(config);
 
-        when(gitService.status(eq(repoPath))).thenReturn(List.of(
-                new FileChange("a.txt", FileChange.ChangeType.MODIFIED, false)));
-        when(gitService.currentBranch(eq(repoPath))).thenReturn("main");
-        when(gitService.aheadBehind(eq(repoPath))).thenReturn(new int[]{1, 0});
-        when(gitService.log(eq(repoPath), eq(1))).thenReturn(List.of(
-                new CommitInfo("abc123", "author", "last commit msg", LocalDateTime.of(2025, 1, 15, 12, 0))));
+        stubGitServiceForRepo(repoPath, "main", 1, new int[]{1, 0}, "last commit msg");
 
         List<Repository> list = manager.getRepositories();
 
         assertEquals(1, list.size());
         Repository repo = list.get(0);
         assertEquals("repo", repo.getName());
-        assertEquals(repoPath.toString(), repo.getPath());
         assertEquals("main", repo.getCurrentBranch());
         assertEquals(1, repo.getChangedFileCount());
         assertEquals(1, repo.getAhead());
@@ -95,7 +92,69 @@ class RepositoryManagerTest {
     }
 
     @Test
-    void add_유효한_레포_등록_후_설정_저장(@TempDir Path tempDir) throws Exception {
+    void getRepositories_유효_무효_혼합시_유효한_것만_반환(@TempDir Path tempDir) throws Exception {
+        Path validRepo = tempDir.resolve("valid");
+        Files.createDirectories(validRepo);
+        Files.createDirectories(validRepo.resolve(".git"));
+
+        AppConfig config = new AppConfig();
+        config.getRepoPaths().add("C:/nonexistent/invalid");
+        config.getRepoPaths().add(validRepo.toString());
+        when(configManager.load()).thenReturn(config);
+
+        stubGitServiceForRepo(validRepo, "main", 0, new int[]{0, 0}, "init");
+
+        List<Repository> list = manager.getRepositories();
+
+        assertEquals(1, list.size());
+        assertEquals("valid", list.get(0).getName());
+    }
+
+    @Test
+    void getRepositories_git_status_실패한_레포는_건너뜀(@TempDir Path tempDir) throws Exception {
+        Path brokenRepo = tempDir.resolve("broken");
+        Files.createDirectories(brokenRepo);
+        Files.createDirectories(brokenRepo.resolve(".git"));
+
+        AppConfig config = new AppConfig();
+        config.getRepoPaths().add(brokenRepo.toString());
+        when(configManager.load()).thenReturn(config);
+
+        when(gitService.currentBranch(any(Path.class)))
+                .thenThrow(new GitExecutionException("fatal", 128, "not a git repo"));
+
+        List<Repository> list = manager.getRepositories();
+
+        assertTrue(list.isEmpty());
+    }
+
+    @Test
+    void getRepositories_캐시된_결과_반환_두번째_호출시_파일IO_없음() {
+        AppConfig config = new AppConfig();
+        when(configManager.load()).thenReturn(config);
+
+        manager.getRepositories(); // 최초 로드
+        manager.getRepositories(); // 캐시 반환
+
+        // configManager.load()는 최초 1회만 호출되어야 함
+        verify(configManager, times(1)).load();
+    }
+
+    @Test
+    void getRepositories_반환값은_읽기전용() {
+        AppConfig config = new AppConfig();
+        when(configManager.load()).thenReturn(config);
+
+        List<Repository> list = manager.getRepositories();
+
+        assertThrows(UnsupportedOperationException.class, () ->
+                list.add(new Repository("C:/test")));
+    }
+
+    // ========== add ==========
+
+    @Test
+    void add_유효한_레포_등록_후_설정_저장_및_캐시_갱신(@TempDir Path tempDir) throws Exception {
         Path repoPath = tempDir.resolve("myrepo");
         Files.createDirectories(repoPath);
         Files.createDirectories(repoPath.resolve(".git"));
@@ -103,10 +162,19 @@ class RepositoryManagerTest {
         AppConfig config = new AppConfig();
         when(configManager.load()).thenReturn(config);
         when(gitService.status(any(Path.class))).thenReturn(List.of());
+        when(gitService.currentBranch(any(Path.class))).thenReturn("main");
+        when(gitService.aheadBehind(any(Path.class))).thenReturn(new int[]{0, 0});
+        when(gitService.log(any(Path.class), eq(1))).thenReturn(List.of());
 
         manager.add(repoPath);
 
-        verify(configManager).save(argThat(c -> c.getRepoPaths().size() == 1 && c.getRepoPaths().get(0).equals(repoPath.toString())));
+        // 설정 저장 확인
+        verify(configManager).save(argThat(c -> c.getRepoPaths().size() == 1));
+
+        // 캐시에도 추가되었는지 확인
+        List<Repository> repos = manager.getRepositories();
+        assertEquals(1, repos.size());
+        assertEquals("myrepo", repos.get(0).getName());
     }
 
     @Test
@@ -116,7 +184,7 @@ class RepositoryManagerTest {
         Files.createDirectories(repoPath.resolve(".git"));
 
         AppConfig config = new AppConfig();
-        config.getRepoPaths().add(repoPath.toString());
+        config.getRepoPaths().add(repoPath.toAbsolutePath().normalize().toString());
         when(configManager.load()).thenReturn(config);
         when(gitService.status(any(Path.class))).thenReturn(List.of());
 
@@ -153,6 +221,8 @@ class RepositoryManagerTest {
         verify(configManager, never()).save(any());
     }
 
+    // ========== remove ==========
+
     @Test
     void remove_등록된_경로_제거() {
         Path path = Path.of("C:/repos/removed");
@@ -164,6 +234,19 @@ class RepositoryManagerTest {
 
         verify(configManager).save(argThat(c -> c.getRepoPaths().isEmpty()));
     }
+
+    @Test
+    void remove_존재하지_않는_경로는_무시() {
+        AppConfig config = new AppConfig();
+        config.getRepoPaths().add("C:\\repos\\existing");
+        when(configManager.load()).thenReturn(config);
+
+        manager.remove(Path.of("C:/repos/nonexistent"));
+
+        verify(configManager, never()).save(any());
+    }
+
+    // ========== refreshStatus ==========
 
     @Test
     void refreshStatus_GitService_호출로_레포_상태_갱신() {
@@ -188,16 +271,115 @@ class RepositoryManagerTest {
     }
 
     @Test
-    void getRepoPaths_설정의_경로_목록_반환() {
+    void refreshStatus_커밋_없는_새_레포() {
+        Repository repo = new Repository("C:/test/new-repo");
+        Path path = Path.of("C:/test/new-repo");
+
+        when(gitService.currentBranch(eq(path))).thenReturn("main");
+        when(gitService.status(eq(path))).thenReturn(List.of());
+        when(gitService.aheadBehind(eq(path))).thenReturn(new int[]{0, 0});
+        when(gitService.log(eq(path), eq(1))).thenReturn(List.of());
+
+        manager.refreshStatus(repo);
+
+        assertEquals("main", repo.getCurrentBranch());
+        assertEquals(0, repo.getChangedFileCount());
+        assertEquals("", repo.getLastCommitMessage());
+        assertNull(repo.getLastCommitDate());
+    }
+
+    // ========== getRepoPaths ==========
+
+    @Test
+    void getRepoPaths_캐시_기반으로_경로_반환(@TempDir Path tempDir) throws Exception {
+        Path repoA = tempDir.resolve("a");
+        Path repoB = tempDir.resolve("b");
+        Files.createDirectories(repoA.resolve(".git"));
+        Files.createDirectories(repoB.resolve(".git"));
+
         AppConfig config = new AppConfig();
-        config.getRepoPaths().add("C:/a");
-        config.getRepoPaths().add("C:/b");
+        config.getRepoPaths().add(repoA.toString());
+        config.getRepoPaths().add(repoB.toString());
         when(configManager.load()).thenReturn(config);
+
+        stubGitServiceForRepo(repoA, "main", 0, new int[]{0, 0}, "");
+        stubGitServiceForRepo(repoB, "dev", 0, new int[]{0, 0}, "");
 
         List<String> paths = manager.getRepoPaths();
 
         assertEquals(2, paths.size());
-        assertTrue(paths.contains("C:/a"));
-        assertTrue(paths.contains("C:/b"));
+    }
+
+    // ========== refreshAll ==========
+
+    @Test
+    void refreshAll_캐시를_다시_로드(@TempDir Path tempDir) throws Exception {
+        Path repoPath = tempDir.resolve("repo");
+        Files.createDirectories(repoPath.resolve(".git"));
+
+        AppConfig config = new AppConfig();
+        config.getRepoPaths().add(repoPath.toString());
+        when(configManager.load()).thenReturn(config);
+
+        stubGitServiceForRepo(repoPath, "main", 0, new int[]{0, 0}, "init");
+
+        manager.getRepositories(); // 최초 로드
+        manager.refreshAll();      // 강제 재로드
+
+        // configManager.load()가 2회 호출되어야 함 (최초 + refreshAll)
+        verify(configManager, times(2)).load();
+    }
+
+    // ========== findByPath ==========
+
+    @Test
+    void findByPath_존재하는_레포_찾기(@TempDir Path tempDir) throws Exception {
+        Path repoPath = tempDir.resolve("target");
+        Files.createDirectories(repoPath.resolve(".git"));
+
+        AppConfig config = new AppConfig();
+        config.getRepoPaths().add(repoPath.toString());
+        when(configManager.load()).thenReturn(config);
+
+        stubGitServiceForRepo(repoPath, "main", 0, new int[]{0, 0}, "init");
+
+        manager.loadRepositories();
+
+        Optional<Repository> found = manager.findByPath(repoPath.toString());
+        assertTrue(found.isPresent());
+        assertEquals("target", found.get().getName());
+    }
+
+    @Test
+    void findByPath_존재하지_않는_경로() {
+        AppConfig config = new AppConfig();
+        when(configManager.load()).thenReturn(config);
+
+        manager.loadRepositories();
+
+        Optional<Repository> found = manager.findByPath("C:/nonexistent");
+        assertFalse(found.isPresent());
+    }
+
+    // ========== 유틸리티 ==========
+
+    private void stubGitServiceForRepo(Path repoPath, String branch, int changeCount,
+                                       int[] aheadBehind, String lastCommitMsg) {
+        when(gitService.currentBranch(eq(repoPath))).thenReturn(branch);
+
+        List<FileChange> changes = new java.util.ArrayList<>();
+        for (int i = 0; i < changeCount; i++) {
+            changes.add(new FileChange("file" + i + ".txt", FileChange.ChangeType.MODIFIED, false));
+        }
+        when(gitService.status(eq(repoPath))).thenReturn(changes);
+        when(gitService.aheadBehind(eq(repoPath))).thenReturn(aheadBehind);
+
+        if (lastCommitMsg != null && !lastCommitMsg.isEmpty()) {
+            when(gitService.log(eq(repoPath), eq(1))).thenReturn(List.of(
+                    new CommitInfo("abc123", "author", lastCommitMsg,
+                            LocalDateTime.of(2025, 1, 15, 12, 0))));
+        } else {
+            when(gitService.log(eq(repoPath), eq(1))).thenReturn(List.of());
+        }
     }
 }

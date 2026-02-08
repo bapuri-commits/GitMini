@@ -107,12 +107,90 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 - `getRepositories()`: 설정의 경로 목록을 읽어 각 경로에 대해 Repository 생성 후 `refreshStatus()`로 branch·변경 수·ahead/behind·최근 커밋 갱신. 무효 경로는 건너뜀.
 - `add()`: 중복 경로는 저장하지 않음. `remove()`: 경로 정규화 후 목록에서 제거하고 설정 저장.
 
-**검증**: `gradlew build` 성공. `RepositoryManagerTest` 10개 단위 테스트 PASSED.
+**검증**: `gradlew build` 성공. `RepositoryManagerTest` 단위 테스트 PASSED.
 
 **코드 리뷰 (Step 2)**
 - **변경 파일**: `RepositoryManager.java` (신규), `RepositoryManagerTest.java` (신규).
 - **설계 준수**: Q5 반영 — add 시 `.git` + `git status` 검증. AppConfig.repoPaths와 동기화 후 ConfigManager.save() 호출.
 - **테스트**: ConfigManager·GitService 모킹, @TempDir로 유효/무효 경로, add 중복·예외·remove·refreshStatus·getRepoPaths 검증.
+
+### Step 1~2 코드 리뷰 후 수정 (데스크톱 복귀 후)
+
+**BUG-1: GitCommandRecord에 repoPath 누락**
+- `GitCommandRecord`에 `repoPath` 필드 추가 (어떤 레포에서 실행된 명령인지 식별).
+- `GitExecutor.recordCommand()` → `recordCommand(result, workingDir)`로 서명 변경.
+- `GitMiniApp.toOperationEvent()` → `record.repoPath()` 사용.
+- `GitExecutorTest` → repoPath 관련 어서션 추가.
+
+**BUG-2: RepositoryManager 매 호출마다 파일 I/O**
+- `List<Repository>` 캐시 도입. `getRepositories()`는 캐시 반환.
+- `loadRepositories()` / `refreshAll()`로 명시적 로드/갱신 분리.
+- `add()` / `remove()` 시 캐시와 설정을 함께 갱신.
+- 경로 비교 시 `equalsIgnoreCase()` 적용 (Windows 대소문자 호환).
+- `findByPath()` 메서드 추가.
+- `getRepositories()` 반환값을 `Collections.unmodifiableList()`로 읽기 전용화.
+
+**DESIGN-1: GitMiniApp에 RepositoryManager 통합**
+- `GitMiniApp`에 `RepositoryManager` 생성 + `getRepositoryManager()` static getter 추가.
+- `stop()`에서 `repositoryManagerInstance = null` 정리.
+
+**테스트 보완 (RepositoryManagerTest)**
+- 기존 11개 → 22개로 확대.
+- 추가 시나리오: 캐시 동작 검증, 읽기 전용 반환, 유효/무효 혼합, git status 실패한 레포 건너뜀, remove 존재하지 않는 경로, 커밋 없는 새 레포, refreshAll, findByPath.
+
+**검증**: `gradlew clean test` → 전체 PASSED.
+
+### Step 3: main.fxml 레이아웃 전면 재설계
+
+**구현**
+- `main.fxml`: DESIGN.md 와이어프레임에 맞게 전면 재설계.
+  - **사이드바**: `ListView<Repository>` + 추가/Clone 버튼 (기존 유지).
+  - **메인 콘텐츠**: `StackPane`으로 welcomePane / repoDetailPane 전환.
+  - **액션 바**: 레포 이름, `ComboBox<String>` 브랜치 선택, 새 브랜치 +, Fetch/Pull/Push, ahead/behind.
+  - **파일 변경 영역**: Unstaged `ListView<FileChange>` | Stage/Unstage 버튼 | Staged `ListView<FileChange>`. 수직 `SplitPane`으로 Diff 뷰어와 리사이즈 가능.
+  - **Diff 뷰어**: `ScrollPane` > `VBox diffContent`. CSS 클래스로 추가/삭제/컨텍스트 줄 스타일 준비.
+  - **커밋 영역**: `TextArea` (promptText), `CheckBox` Amend, `Button` Commit (accent 스타일).
+  - **커밋 히스토리**: `TitledPane` 접이식, `ListView<CommitInfo>`.
+  - **Command Log**: `TitledPane` 접이식, `ListView<GitCommandRecord>` (monospace).
+  - **상태바**: `ProgressIndicator` (숨김), 상태 메시지, 브랜치, 변경 파일 수.
+
+- `MainController.java`: 전면 재작성.
+  - 모든 FXML 바인딩 (28개 필드) — 타입 지정 (`ListView<Repository>`, `ListView<FileChange>`, `ComboBox<String>` 등).
+  - `showWelcome()` / `showRepoDetail()` 화면 전환 메서드.
+  - 핸들러 스텁 13개 — 로그 + 상태바 메시지 (실제 로직은 Step 4~12에서 구현).
+
+- `app.css`: 12개 스타일 섹션 추가.
+  - 액션 바, 파일 변경 영역, Diff 줄 스타일 (added/removed/context/hunk), 커밋 영역, 하단 패널, 상태바.
+
+**설계 결정**
+- **단일 MainController**: DESIGN.md에서는 `RepoDetailController` 분리를 계획했으나, FXML include 없이 단일 컨트롤러로 통합. 코드가 비대해지면 Step 4~10 진행 중 분리 가능.
+- **StackPane 전환**: welcomePane과 repoDetailPane을 `visible` 속성으로 전환. StackPane이 두 자식을 겹치므로, visible=false인 쪽은 클릭 이벤트도 받지 않아 자연스러움.
+
+**검증**: `gradlew clean test` → 153개 테스트 전체 PASSED. 컴파일 성공.
+
+### Step 4: 사이드바 구현
+
+**구현**
+- `controller/component/RepoListCell.java` (신규): Custom ListCell.
+  - 레포 이름 (bold), 브랜치명, 상태 아이콘 (✓ clean / ⚠N dirty), ahead/behind (↑N ↓N).
+  - 우클릭 컨텍스트 메뉴: "레포 제거" → 확인 다이얼로그 후 `RepositoryManager.remove()`.
+- `MainController.java` 전면 업데이트:
+  - `initialize()`: Custom ListCell 설정, 선택 리스너 등록, 레포 목록 비동기 로드.
+  - `loadRepoList()`: `TaskManager.run()` → `RepositoryManager.getRepositories()` → ListView 갱신.
+  - `onRepoSelected()`: 선택 시 `showRepoDetail()` + 레포 상태 비동기 갱신.
+  - `refreshRepoDetail()`: 백그라운드에서 status/branches/aheadBehind 조회 → UI 스레드에서 파일 목록, 브랜치 ComboBox, ahead/behind, 상태바 갱신.
+  - `onAddRepo()`: `DirectoryChooser` → `RepositoryManager.add()` (비동기) → 목록 재로드.
+  - `removeRepo()`: 확인 Alert → `RepositoryManager.remove()` → 목록 재로드.
+  - `RepoDetailData` 내부 record: 백그라운드 결과 묶음.
+  - `setStatus()`, `updateStatusBar()`, `updateAheadBehind()`, `showErrorAlert()` 유틸리티.
+- `app.css`: 사이드바 레포 셀 스타일 7개 추가 (`.repo-cell-*`, `.status-clean`, `.status-dirty`).
+
+**설계 결정**
+- **비동기 패턴 일관성**: 모든 Git 작업은 `TaskManager.run()`으로 감쌈. UI 스레드 블로킹 없음.
+- **레포 목록 갱신**: add/remove 후 `loadRepoList()`로 전체 재로드. 캐시 기반이므로 성능 무관.
+- **선택 복원**: `loadRepoList()` 후 이전 선택된 레포를 path로 찾아 복원.
+
+**검증**: `gradlew clean test` → 153개 테스트 전체 PASSED.
 
 ---
 

@@ -93,6 +93,8 @@ class GitExecutorTest {
         assertTrue(record.success());
         assertTrue(record.durationMs() >= 0);
         assertNotNull(record.timestamp());
+        assertNotNull(record.repoPath());
+        assertFalse(record.repoPath().isEmpty());
     }
 
     @Test
@@ -123,6 +125,8 @@ class GitExecutorTest {
         assertNotNull(received.get());
         assertEquals("git --version", received.get().command());
         assertTrue(received.get().success());
+        assertNotNull(received.get().repoPath());
+        assertFalse(received.get().repoPath().isEmpty());
     }
 
     @Test
@@ -145,7 +149,7 @@ class GitExecutorTest {
 
         List<GitCommandRecord> history = executor.getCommandHistory();
         assertThrows(UnsupportedOperationException.class, () ->
-                history.add(new GitCommandRecord("x", null, true, 0, "")));
+                history.add(new GitCommandRecord("x", "", null, true, 0, "")));
     }
 
     // ========== Git 설치 확인 ==========

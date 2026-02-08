@@ -1,9 +1,11 @@
 /*
- * GitMini 커스텀 스타일 — AtlantaFX 테마 위에 덧씌운다.
+ * GitMini 커스텀 스타일 — AtlantaFX Primer Dark 테마 위에 덧씌운다.
  * AtlantaFX의 looked-up color 변수 (-color-*) 를 활용한다.
  */
 
-/* === 사이드바 === */
+/* ================================================================ */
+/* 사이드바                                                          */
+/* ================================================================ */
 
 .sidebar {
     -fx-padding: 0;
@@ -21,18 +23,177 @@
     -fx-border-color: -color-border-default;
 }
 
-/* === 메인 콘텐츠 === */
+/* ================================================================ */
+/* 사이드바 레포 셀 (RepoListCell)                                    */
+/* ================================================================ */
 
-.main-content {
-    -fx-padding: 16;
+.repo-cell {
+    -fx-padding: 6 8;
 }
 
-.welcome-text {
-    -fx-font-size: 16px;
+.repo-cell-name {
+    -fx-font-size: 13px;
+    -fx-font-weight: bold;
+}
+
+.repo-cell-branch {
+    -fx-font-size: 11px;
     -fx-text-fill: -color-fg-muted;
 }
 
-/* === 상태바 === */
+.repo-cell-status {
+    -fx-font-size: 11px;
+    -fx-padding: 0 4;
+}
+
+.status-clean {
+    -fx-text-fill: -color-success-fg;
+}
+
+.status-dirty {
+    -fx-text-fill: -color-warning-fg;
+}
+
+.repo-cell-ahead-behind {
+    -fx-font-size: 10px;
+    -fx-text-fill: -color-fg-subtle;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+}
+
+/* ================================================================ */
+/* Welcome Pane (레포 미선택 시)                                      */
+/* ================================================================ */
+
+.welcome-text {
+    -fx-font-size: 18px;
+    -fx-text-fill: -color-fg-muted;
+}
+
+.welcome-hint {
+    -fx-font-size: 13px;
+    -fx-text-fill: -color-fg-subtle;
+}
+
+/* ================================================================ */
+/* 액션 바 (레포 이름 + 브랜치 + Push/Pull/Fetch)                     */
+/* ================================================================ */
+
+.action-bar {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-width: 0 0 1 0;
+    -fx-border-color: -color-border-default;
+}
+
+.repo-name {
+    -fx-font-size: 15px;
+    -fx-font-weight: bold;
+}
+
+.ahead-behind {
+    -fx-font-size: 12px;
+    -fx-text-fill: -color-fg-muted;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+}
+
+.small-btn {
+    -fx-min-width: 28;
+    -fx-min-height: 28;
+    -fx-padding: 2 6;
+}
+
+/* ================================================================ */
+/* 파일 변경 영역 (Unstaged / Staged)                                 */
+/* ================================================================ */
+
+.file-changes-area {
+    -fx-background-color: -color-bg-default;
+}
+
+.section-header {
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-text-fill: -color-fg-muted;
+}
+
+.stage-btn {
+    -fx-min-width: 32;
+    -fx-padding: 4 6;
+    -fx-font-size: 11px;
+}
+
+/* ================================================================ */
+/* Diff 뷰어                                                         */
+/* ================================================================ */
+
+.diff-area {
+    -fx-background-color: -color-bg-default;
+}
+
+.diff-header {
+    -fx-background-color: -color-bg-subtle;
+    -fx-border-width: 0 0 1 0;
+    -fx-border-color: -color-border-default;
+}
+
+.diff-content {
+    -fx-padding: 0;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 12px;
+}
+
+.diff-line-added {
+    -fx-background-color: rgba(63, 185, 80, 0.15);
+    -fx-padding: 1 8;
+}
+
+.diff-line-removed {
+    -fx-background-color: rgba(248, 81, 73, 0.15);
+    -fx-padding: 1 8;
+}
+
+.diff-line-context {
+    -fx-padding: 1 8;
+}
+
+.diff-line-hunk {
+    -fx-background-color: rgba(56, 139, 253, 0.1);
+    -fx-text-fill: -color-fg-muted;
+    -fx-padding: 2 8;
+    -fx-font-style: italic;
+}
+
+/* ================================================================ */
+/* 커밋 영역                                                         */
+/* ================================================================ */
+
+.commit-area {
+    -fx-background-color: -color-bg-default;
+}
+
+.commit-area .text-area {
+    -fx-font-size: 13px;
+}
+
+/* ================================================================ */
+/* 커밋 히스토리 & Command Log (하단 접이식 패널)                      */
+/* ================================================================ */
+
+.bottom-pane {
+    -fx-font-size: 12px;
+}
+
+.bottom-pane > .title {
+    -fx-background-color: -color-bg-subtle;
+}
+
+.command-log {
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 12px;
+}
+
+/* ================================================================ */
+/* 상태바                                                            */
+/* ================================================================ */
 
 .status-bar {
     -fx-padding: 4 12;
@@ -41,10 +202,6 @@
     -fx-font-size: 12px;
 }
 
-/* === Command Log 패널 (Phase 3에서 활성화) === */
-
-.command-log {
-    -fx-padding: 8 12;
-    -fx-font-family: "Consolas", "Courier New", monospace;
-    -fx-font-size: 12px;
+.status-bar .progress-indicator {
+    -fx-padding: 0;
 }

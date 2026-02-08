@@ -1,71 +1,485 @@
 package com.gitmini.controller;
 
+import com.gitmini.GitMiniApp;
+import com.gitmini.async.TaskManager;
+import com.gitmini.controller.component.RepoListCell;
+import com.gitmini.model.CommitInfo;
+import com.gitmini.model.FileChange;
+import com.gitmini.model.GitCommandRecord;
+import com.gitmini.model.Repository;
+import com.gitmini.service.GitService;
+import com.gitmini.service.RepositoryManager;
+import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListView;
-import javafx.scene.control.SplitPane;
+import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
+import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.stage.DirectoryChooser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
+import java.nio.file.Path;
+import java.util.List;
+
 /**
  * 메인 화면 컨트롤러.
- * 사이드바 (레포 목록) + 메인 콘텐츠 영역 + 상태바를 관리한다.
+ * <p>
+ * 사이드바(레포 목록) + 메인 콘텐츠(파일 변경, Diff, 커밋, 액션, 히스토리, Command Log) + 상태바를 관리한다.
+ * 레포 미선택 시 welcomePane, 선택 시 repoDetailPane을 표시한다.
+ * </p>
+ * <p>
+ * 모든 Git 작업은 {@code TaskManager.run()}으로 감싸서 비동기 실행한다.
+ * EventBus 구독은 {@link #initialize()}에서 등록한다.
+ * 구독 해제는 앱 종료 시 또는 필요 시 명시적으로 수행해야 한다.
+ * </p>
  */
 public class MainController {
 
     private static final Logger log = LoggerFactory.getLogger(MainController.class);
 
-    // --- FXML 바인딩 ---
+    // ========== FXML 바인딩: 사이드바 ==========
 
-    @FXML
-    private SplitPane mainSplitPane;
+    @FXML private SplitPane mainSplitPane;
+    @FXML private VBox sidebar;
+    @FXML private ListView<Repository> repoListView;
 
-    @FXML
-    private VBox sidebar;
+    // ========== FXML 바인딩: 메인 콘텐츠 (전환) ==========
 
-    @FXML
-    private ListView<String> repoListView;
+    @FXML private StackPane mainContent;
+    @FXML private VBox welcomePane;
+    @FXML private Label welcomeLabel;
+    @FXML private VBox repoDetailPane;
 
-    @FXML
-    private VBox mainContent;
+    // ========== FXML 바인딩: 액션 바 ==========
 
-    @FXML
-    private Label welcomeLabel;
+    @FXML private HBox actionBar;
+    @FXML private Label repoNameLabel;
+    @FXML private ComboBox<String> branchComboBox;
+    @FXML private Button newBranchBtn;
+    @FXML private Label aheadBehindLabel;
+    @FXML private Button fetchBtn;
+    @FXML private Button pullBtn;
+    @FXML private Button pushBtn;
 
-    @FXML
-    private HBox statusBar;
+    // ========== FXML 바인딩: 파일 변경 영역 ==========
 
-    @FXML
-    private Label statusLabel;
+    @FXML private SplitPane contentSplitPane;
+    @FXML private ListView<FileChange> unstagedListView;
+    @FXML private ListView<FileChange> stagedListView;
+    @FXML private Button stageAllBtn;
+    @FXML private Button stageBtn;
+    @FXML private Button unstageBtn;
+    @FXML private Button unstageAllBtn;
 
-    @FXML
-    private Label branchLabel;
+    // ========== FXML 바인딩: Diff 뷰어 ==========
 
-    // --- 초기화 ---
+    @FXML private Label diffFileLabel;
+    @FXML private ScrollPane diffScrollPane;
+    @FXML private VBox diffContent;
+
+    // ========== FXML 바인딩: 커밋 영역 ==========
+
+    @FXML private VBox commitArea;
+    @FXML private TextArea commitMessageArea;
+    @FXML private CheckBox amendCheckBox;
+    @FXML private Button commitBtn;
+
+    // ========== FXML 바인딩: 커밋 히스토리 ==========
+
+    @FXML private TitledPane commitHistoryPane;
+    @FXML private ListView<CommitInfo> commitHistoryListView;
+
+    // ========== FXML 바인딩: Command Log ==========
+
+    @FXML private TitledPane commandLogPane;
+    @FXML private ListView<GitCommandRecord> commandLogListView;
+
+    // ========== FXML 바인딩: 상태바 ==========
+
+    @FXML private HBox statusBar;
+    @FXML private ProgressIndicator progressIndicator;
+    @FXML private Label statusLabel;
+    @FXML private Label branchStatusLabel;
+    @FXML private Label changesCountLabel;
+
+    // ========== 내부 상태 ==========
+
+    /** 현재 선택된 레포. null이면 미선택. */
+    private Repository selectedRepo;
+
+    // ========== 초기화 ==========
 
     @FXML
     public void initialize() {
         log.info("MainController 초기화");
 
-        // Phase 1: 기본 초기화만 수행
-        // Phase 3에서 레포 목록 로드, 이벤트 구독 등 추가 예정
+        // StackPane 화면 전환: managed를 visible에 바인딩
+        welcomePane.managedProperty().bind(welcomePane.visibleProperty());
+        repoDetailPane.managedProperty().bind(repoDetailPane.visibleProperty());
+
+        // 사이드바: Custom ListCell 설정
+        repoListView.setCellFactory(listView -> new RepoListCell(this::removeRepo));
+
+        // 사이드바: 선택 이벤트
+        repoListView.getSelectionModel().selectedItemProperty().addListener(
+                (obs, oldRepo, newRepo) -> onRepoSelected(newRepo));
+
+        // 초기 상태
+        showWelcome();
+
+        // 등록된 레포 목록 로드 (비동기)
+        loadRepoList();
     }
 
-    // --- 사이드바 액션 ---
+    // ========== 사이드바: 레포 목록 로드 ==========
+
+    /**
+     * 등록된 레포 목록을 비동기로 로드하여 사이드바에 표시한다.
+     */
+    private void loadRepoList() {
+        loadRepoListWithStatus("✓ Ready");
+    }
+
+    /**
+     * 등록된 레포 목록을 비동기로 로드하고, 완료 후 지정된 상태 메시지를 표시한다.
+     */
+    private void loadRepoListWithStatus(String completionStatus) {
+        RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        if (repoManager == null || taskManager == null) return;
+
+        setStatus("레포 목록 로딩...");
+        taskManager.run(
+                repoManager::getRepositories,
+                repos -> {
+                    repoListView.setItems(FXCollections.observableArrayList(repos));
+                    setStatus(completionStatus);
+                    log.info("레포 목록 로드 완료: {}개", repos.size());
+
+                    // 이전에 선택된 레포 복원
+                    if (selectedRepo != null) {
+                        for (Repository r : repoListView.getItems()) {
+                            if (r.getPath().equals(selectedRepo.getPath())) {
+                                repoListView.getSelectionModel().select(r);
+                                break;
+                            }
+                        }
+                    }
+                },
+                error -> {
+                    log.error("레포 목록 로드 실패", error);
+                    setStatus("레포 목록 로드 실패: " + error.getMessage());
+                }
+        );
+    }
+
+    // ========== 사이드바: 레포 선택 ==========
+
+    /**
+     * 사이드바에서 레포를 선택했을 때 호출된다.
+     */
+    private void onRepoSelected(Repository repo) {
+        if (repo == null) {
+            selectedRepo = null;
+            showWelcome();
+            updateStatusBar(null);
+            return;
+        }
+
+        // 이미 같은 레포가 선택된 상태면 중복 갱신 방지 (우클릭으로 선택 변경 시 불필요한 재로드 차단)
+        if (selectedRepo != null && selectedRepo.getPath().equals(repo.getPath())) {
+            return;
+        }
+
+        selectedRepo = repo;
+        log.info("레포 선택: {}", repo.getName());
+
+        showRepoDetail();
+
+        // 액션 바 기본 정보 즉시 표시
+        repoNameLabel.setText(repo.getName());
+        updateStatusBar(repo);
+
+        // 상세 정보 비동기 로드 (파일 목록, 브랜치 등)
+        refreshRepoDetail(repo);
+    }
+
+    /**
+     * 선택된 레포의 상세 정보를 비동기로 갱신한다.
+     * <p>
+     * 백그라운드 스레드에서 Git 명령을 실행하고, 결과를 별도 데이터 객체에 담아
+     * UI 스레드에서 Repository 및 UI에 적용한다 (스레드 안전성 보장).
+     * </p>
+     */
+    private void refreshRepoDetail(Repository repo) {
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Path repoPath = Path.of(repo.getPath());
+
+        setStatus("상태 갱신 중...");
+        taskManager.run(
+                () -> {
+                    // 백그라운드: 모든 Git 정보를 1회씩만 조회하여 데이터 객체에 담음
+                    String currentBranch = gitService.currentBranch(repoPath);
+
+                    List<FileChange> allChanges = gitService.status(repoPath);
+                    List<FileChange> unstaged = allChanges.stream()
+                            .filter(f -> !f.staged()).toList();
+                    List<FileChange> staged = allChanges.stream()
+                            .filter(FileChange::staged).toList();
+
+                    int[] ab = gitService.aheadBehind(repoPath);
+
+                    List<String> branches = gitService.branches(repoPath).stream()
+                            .map(b -> b.name()).toList();
+
+                    var logList = gitService.log(repoPath, 1);
+                    String lastCommitMsg = logList.isEmpty() ? "" : logList.get(0).message();
+                    var lastCommitDate = logList.isEmpty() ? null : logList.get(0).date();
+
+                    return new RepoDetailData(
+                            currentBranch, unstaged, staged, branches,
+                            allChanges.size(), ab[0], ab[1],
+                            lastCommitMsg, lastCommitDate);
+                },
+                data -> {
+                    // UI 스레드: Repository 필드 갱신 (스레드 안전)
+                    repo.setCurrentBranch(data.currentBranch);
+                    repo.setChangedFileCount(data.changedFileCount);
+                    repo.setAhead(data.ahead);
+                    repo.setBehind(data.behind);
+                    repo.setLastCommitMessage(data.lastCommitMsg);
+                    repo.setLastCommitDate(data.lastCommitDate);
+
+                    // UI 갱신
+                    unstagedListView.setItems(FXCollections.observableArrayList(data.unstaged));
+                    stagedListView.setItems(FXCollections.observableArrayList(data.staged));
+
+                    branchComboBox.setItems(FXCollections.observableArrayList(data.branches));
+                    branchComboBox.setValue(data.currentBranch);
+
+                    updateAheadBehind(repo);
+                    updateStatusBar(repo);
+
+                    // 사이드바도 갱신 (변경 파일 수 등 반영)
+                    repoListView.refresh();
+
+                    setStatus("✓ Ready");
+                },
+                error -> {
+                    log.error("레포 상세 로드 실패: {}", repo.getName(), error);
+                    setStatus("상태 갱신 실패: " + error.getMessage());
+                }
+        );
+    }
+
+    /** refreshRepoDetail의 백그라운드 결과를 담는 불변 데이터 객체. */
+    private record RepoDetailData(
+            String currentBranch,
+            List<FileChange> unstaged,
+            List<FileChange> staged,
+            List<String> branches,
+            int changedFileCount,
+            int ahead,
+            int behind,
+            String lastCommitMsg,
+            java.time.LocalDateTime lastCommitDate
+    ) {}
+
+    // ========== 사이드바 액션 ==========
 
     @FXML
     private void onAddRepo() {
         log.info("레포 추가 버튼 클릭");
-        // TODO: Phase 3 — DirectoryChooser로 폴더 선택
-        statusLabel.setText("레포 추가 — Phase 3에서 구현 예정");
+
+        DirectoryChooser chooser = new DirectoryChooser();
+        chooser.setTitle("Git 레포지토리 폴더 선택");
+        File selected = chooser.showDialog(sidebar.getScene().getWindow());
+
+        if (selected == null) return; // 취소
+
+        RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        if (repoManager == null || taskManager == null) return;
+
+        setStatus("레포 추가 중...");
+        taskManager.run(
+                () -> {
+                    repoManager.add(selected.toPath());
+                    return null;
+                },
+                result -> {
+                    log.info("레포 추가 완료: {}", selected.getName());
+                    // loadRepoList 완료 후 성공 메시지를 표시하기 위해 별도 메시지 전달
+                    loadRepoListWithStatus("✓ 레포 추가 완료: " + selected.getName());
+                },
+                error -> {
+                    log.error("레포 추가 실패: {}", selected, error);
+                    showErrorAlert("레포 추가 실패", error.getMessage());
+                    setStatus("레포 추가 실패");
+                }
+        );
     }
 
     @FXML
     private void onCloneRepo() {
         log.info("Clone 버튼 클릭");
-        // TODO: Phase 4 — Clone 다이얼로그
-        statusLabel.setText("Clone — Phase 4에서 구현 예정");
+        // Phase 4에서 구현
+        setStatus("Clone — Phase 4에서 구현 예정");
+    }
+
+    // ========== 사이드바: 레포 제거 ==========
+
+    /**
+     * 컨텍스트 메뉴에서 레포 제거가 선택되었을 때 호출된다.
+     */
+    private void removeRepo(Repository repo) {
+        log.info("레포 제거 요청: {}", repo.getName());
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.initOwner(sidebar.getScene().getWindow());
+        confirm.setTitle("레포 제거");
+        confirm.setHeaderText(repo.getName());
+        confirm.setContentText("이 레포를 목록에서 제거하시겠습니까?\n(로컬 파일은 삭제되지 않습니다)");
+
+        confirm.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
+                if (repoManager == null) return;
+
+                repoManager.remove(Path.of(repo.getPath()));
+
+                // 현재 선택된 레포를 제거했으면 welcome으로 전환
+                if (selectedRepo != null && selectedRepo.getPath().equals(repo.getPath())) {
+                    selectedRepo = null;
+                    showWelcome();
+                    updateStatusBar(null);
+                }
+
+                loadRepoList();
+                setStatus("✓ 레포 제거 완료: " + repo.getName());
+                log.info("레포 제거 완료: {}", repo.getName());
+            }
+        });
+    }
+
+    // ========== 화면 전환 ==========
+
+    private void showWelcome() {
+        welcomePane.setVisible(true);
+        repoDetailPane.setVisible(false);
+    }
+
+    private void showRepoDetail() {
+        welcomePane.setVisible(false);
+        repoDetailPane.setVisible(true);
+    }
+
+    // ========== 상태바 / 피드백 ==========
+
+    private void setStatus(String message) {
+        statusLabel.setText(message);
+    }
+
+    private void updateStatusBar(Repository repo) {
+        if (repo == null) {
+            branchStatusLabel.setText("");
+            changesCountLabel.setText("");
+            return;
+        }
+        branchStatusLabel.setText(repo.getCurrentBranch());
+
+        int changes = repo.getChangedFileCount();
+        changesCountLabel.setText(changes > 0 ? changes + " 변경" : "");
+    }
+
+    private void updateAheadBehind(Repository repo) {
+        int ahead = repo.getAhead();
+        int behind = repo.getBehind();
+        StringBuilder sb = new StringBuilder();
+        if (ahead > 0) sb.append("↑").append(ahead);
+        if (ahead > 0 && behind > 0) sb.append(" ");
+        if (behind > 0) sb.append("↓").append(behind);
+        aheadBehindLabel.setText(sb.toString());
+    }
+
+    private void showErrorAlert(String header, String content) {
+        Alert alert = new Alert(Alert.AlertType.ERROR);
+        alert.initOwner(sidebar.getScene().getWindow());
+        alert.setTitle("오류");
+        alert.setHeaderText(header);
+        alert.setContentText(content);
+        alert.showAndWait();
+    }
+
+    // ========== 브랜치 액션 ==========
+
+    @FXML
+    private void onNewBranch() {
+        log.info("새 브랜치 생성 버튼 클릭");
+        // Step 8에서 구현
+        setStatus("새 브랜치 — Step 8에서 구현 예정");
+    }
+
+    // ========== 원격 액션 ==========
+
+    @FXML
+    private void onFetch() {
+        log.info("Fetch 버튼 클릭");
+        // Step 8에서 구현
+        setStatus("Fetch — Step 8에서 구현 예정");
+    }
+
+    @FXML
+    private void onPull() {
+        log.info("Pull 버튼 클릭");
+        // Step 8에서 구현
+        setStatus("Pull — Step 8에서 구현 예정");
+    }
+
+    @FXML
+    private void onPush() {
+        log.info("Push 버튼 클릭");
+        // Step 8에서 구현
+        setStatus("Push — Step 8에서 구현 예정");
+    }
+
+    // ========== 스테이징 액션 ==========
+
+    @FXML
+    private void onStageAll() {
+        log.info("전체 Stage 클릭");
+        // Step 5에서 구현
+    }
+
+    @FXML
+    private void onStage() {
+        log.info("선택 Stage 클릭");
+        // Step 5에서 구현
+    }
+
+    @FXML
+    private void onUnstage() {
+        log.info("선택 Unstage 클릭");
+        // Step 5에서 구현
+    }
+
+    @FXML
+    private void onUnstageAll() {
+        log.info("전체 Unstage 클릭");
+        // Step 5에서 구현
+    }
+
+    // ========== 커밋 액션 ==========
+
+    @FXML
+    private void onCommit() {
+        log.info("Commit 버튼 클릭");
+        // Step 7에서 구현
+        setStatus("Commit — Step 7에서 구현 예정");
     }
 }
