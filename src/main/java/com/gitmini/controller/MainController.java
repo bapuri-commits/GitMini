@@ -293,16 +293,16 @@ public class MainController {
                 RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
                 TaskManager taskManager = GitMiniApp.getTaskManager();
                 if (repoManager != null && taskManager != null) {
-                    int count = 0;
-                    for (File f : db.getFiles()) {
-                        if (f.isDirectory()) {
-                            final String name = f.getName();
-                            final File dir = f;
-                            count++;
-                            final int c = count;
+                    // 디렉토리만 필터
+                    List<File> dirs = db.getFiles().stream().filter(File::isDirectory).toList();
+                    if (!dirs.isEmpty()) {
+                        setStatus("레포 추가 중...");
+                        final int total = dirs.size();
+                        for (File dir : dirs) {
+                            final String name = dir.getName();
                             taskManager.run(
                                     () -> { repoManager.add(dir.toPath()); return null; },
-                                    r -> loadRepoListWithStatus("✓ 드롭으로 레포 " + c + "개 추가"),
+                                    r -> loadRepoListWithStatus("✓ 드롭으로 레포 추가: " + name),
                                     err -> {
                                         log.warn("드롭 레포 추가 실패: {}: {}", name, err.getMessage());
                                         setStatus("레포 추가 실패: " + name);
@@ -310,7 +310,6 @@ public class MainController {
                             );
                         }
                     }
-                    if (count > 0) setStatus("레포 추가 중...");
                 }
             }
             event.setDropCompleted(true);
@@ -1331,6 +1330,17 @@ public class MainController {
     // ========== 키보드 단축키 ==========
 
     // ========== 자동 Fetch ==========
+
+    /** 리소스 정리 (앱 종료 시 호출). */
+    public void dispose() {
+        if (autoFetchTimeline != null) {
+            autoFetchTimeline.stop();
+            log.debug("자동 Fetch 타이머 정지");
+        }
+        if (commandLogEventHandler != null) {
+            com.gitmini.event.EventBus.getInstance().unsubscribe(GitCommandRecord.class, commandLogEventHandler);
+        }
+    }
 
     /** 설정된 간격(분)으로 선택된 레포를 백그라운드 fetch한다. 원격 없는 레포는 스킵. */
     private void startAutoFetch() {

@@ -44,6 +44,7 @@ public class GitMiniApp extends Application {
     private GitExecutor gitExecutor;
     private GitService gitService;
     private RepositoryManager repositoryManager;
+    private com.gitmini.controller.MainController mainController;
 
     // --- 앱 전역 접근자 ---
     private static TaskManager taskManagerInstance;
@@ -133,6 +134,7 @@ public class GitMiniApp extends Application {
                 Objects.requireNonNull(getClass().getResource("/fxml/main.fxml"),
                         "main.fxml을 찾을 수 없습니다"));
         Parent root = loader.load();
+        mainController = loader.getController();
 
         // Scene 설정
         Scene scene = new Scene(root, appConfig.getWindowWidth(), appConfig.getWindowHeight());
@@ -198,6 +200,11 @@ public class GitMiniApp extends Application {
             }
         } catch (Exception e) {
             log.error("종료 시 설정 저장 실패", e);
+        }
+
+        // MainController 리소스 정리 (타이머, EventBus 구독 해제)
+        if (mainController != null) {
+            try { mainController.dispose(); } catch (Exception e) { log.debug("컨트롤러 정리 실패", e); }
         }
 
         // 앱 전역 참조 정리
