@@ -76,13 +76,15 @@ public class RepositoryManager {
                 log.debug("레포 경로 무시 (디렉터리 또는 .git 없음): {}", path);
                 continue;
             }
+            Repository repo = new Repository(path.toString());
             try {
-                Repository repo = new Repository(path.toString());
                 refreshStatus(repo);
-                cache.add(repo);
-            } catch (GitExecutionException e) {
-                log.warn("레포 상태 갱신 실패, 목록에서 제외: {} - {}", path, e.getMessage());
+            } catch (Exception e) {
+                // 커밋 없는 레포 등 — 상태 갱신 실패해도 목록에는 추가 (degraded 표시)
+                log.warn("레포 상태 갱신 실패 (목록에는 포함): {} - {}", path, e.getMessage());
+                repo.setCurrentBranch("(error)");
             }
+            cache.add(repo);
         }
         cacheLoaded = true;
         log.info("레포 목록 로드 완료: {}개", cache.size());

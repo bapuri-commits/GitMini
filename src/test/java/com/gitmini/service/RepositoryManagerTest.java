@@ -111,7 +111,7 @@ class RepositoryManagerTest {
     }
 
     @Test
-    void getRepositories_git_status_실패한_레포는_건너뜀(@TempDir Path tempDir) throws Exception {
+    void getRepositories_git_status_실패한_레포도_degraded로_포함(@TempDir Path tempDir) throws Exception {
         Path brokenRepo = tempDir.resolve("broken");
         Files.createDirectories(brokenRepo);
         Files.createDirectories(brokenRepo.resolve(".git"));
@@ -125,7 +125,9 @@ class RepositoryManagerTest {
 
         List<Repository> list = manager.getRepositories();
 
-        assertTrue(list.isEmpty());
+        // 실패한 레포도 목록에 포함 (degraded 상태)
+        assertEquals(1, list.size());
+        assertEquals("(error)", list.get(0).getCurrentBranch());
     }
 
     @Test

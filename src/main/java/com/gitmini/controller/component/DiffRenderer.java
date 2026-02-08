@@ -24,6 +24,9 @@ public final class DiffRenderer {
 
     private DiffRenderer() {} // 유틸리티 클래스
 
+    /** UI 프리즈 방지를 위한 최대 렌더링 줄 수. 이 이상은 잘라내고 안내 메시지를 표시. */
+    private static final int MAX_LINES = 2000;
+
     /**
      * DiffEntry 목록을 VBox에 렌더링한다.
      * 기존 children을 모두 제거하고 새로 추가한다.
@@ -41,22 +44,41 @@ public final class DiffRenderer {
             return;
         }
 
+        int[] lineCount = {0}; // mutable counter for lambda/method reference
         for (DiffEntry entry : entries) {
-            renderEntry(container, entry);
+            if (lineCount[0] >= MAX_LINES) break;
+            renderEntry(container, entry, lineCount);
         }
     }
 
-    private static void renderEntry(VBox container, DiffEntry entry) {
+    private static void renderEntry(VBox container, DiffEntry entry, int[] lineCount) {
         for (DiffHunk hunk : entry.hunks()) {
+            if (lineCount[0] >= MAX_LINES) {
+                Label truncated = createLine(
+                        String.format("... diff가 너무 큽니다 (%d줄 이상). 나머지는 생략됩니다.", MAX_LINES),
+                        "diff-line-hunk");
+                container.getChildren().add(truncated);
+                return;
+            }
+
             // Hunk 헤더: @@ -oldStart,oldCount +newStart,newCount @@
             String hunkHeader = String.format("@@ -%d,%d +%d,%d @@",
                     hunk.oldStart(), hunk.oldCount(),
                     hunk.newStart(), hunk.newCount());
             Label hunkLabel = createLine(hunkHeader, "diff-line-hunk");
             container.getChildren().add(hunkLabel);
+            lineCount[0]++;
 
             // Hunk 내 각 줄
             for (DiffLine line : hunk.lines()) {
+                if (lineCount[0] >= MAX_LINES) {
+                    Label truncated = createLine(
+                            String.format("... diff가 너무 큽니다 (%d줄 이상). 나머지는 생략됩니다.", MAX_LINES),
+                            "diff-line-hunk");
+                    container.getChildren().add(truncated);
+                    return;
+                }
+
                 String prefix;
                 String styleClass;
                 switch (line.type()) {
@@ -75,6 +97,7 @@ public final class DiffRenderer {
                 }
                 Label lineLabel = createLine(prefix + line.content(), styleClass);
                 container.getChildren().add(lineLabel);
+                lineCount[0]++;
             }
         }
     }

@@ -119,6 +119,9 @@ public class MainController {
     /** 파일 선택 리스너 재진입 방지 플래그. */
     private boolean updatingFileSelection = false;
 
+    /** 브랜치 ComboBox 프로그래밍 갱신 중 onBranchChanged 방지 플래그. */
+    private boolean updatingBranchComboBox = false;
+
     // ========== 초기화 ==========
 
     @FXML
@@ -145,6 +148,10 @@ public class MainController {
                 (obs, oldFile, newFile) -> onFileSelected(newFile, false));
         stagedListView.getSelectionModel().selectedItemProperty().addListener(
                 (obs, oldFile, newFile) -> onFileSelected(newFile, true));
+
+        // 브랜치 ComboBox: 변경 이벤트 → 브랜치 전환
+        branchComboBox.valueProperty().addListener(
+                (obs, oldBranch, newBranch) -> onBranchChanged(newBranch));
 
         // 초기 상태
         showWelcome();
@@ -262,7 +269,13 @@ public class MainController {
         taskManager.run(
                 () -> {
                     // 백그라운드: 모든 Git 정보를 1회씩만 조회하여 데이터 객체에 담음
-                    String currentBranch = gitService.currentBranch(repoPath);
+                    // 커밋 없는 레포(HEAD 없음)에 대한 방어적 처리 포함
+                    String currentBranch;
+                    try {
+                        currentBranch = gitService.currentBranch(repoPath);
+                    } catch (Exception e) {
+                        currentBranch = "(no commits)";
+                    }
 
                     List<FileChange> allChanges = gitService.status(repoPath);
                     List<FileChange> unstaged = allChanges.stream()
@@ -272,10 +285,20 @@ public class MainController {
 
                     int[] ab = gitService.aheadBehind(repoPath);
 
-                    List<String> branches = gitService.branches(repoPath).stream()
-                            .map(b -> b.name()).toList();
+                    List<String> branches;
+                    try {
+                        branches = gitService.branches(repoPath).stream()
+                                .map(b -> b.name()).toList();
+                    } catch (Exception e) {
+                        branches = List.of();
+                    }
 
-                    var logList = gitService.log(repoPath, 1);
+                    List<com.gitmini.model.CommitInfo> logList;
+                    try {
+                        logList = gitService.log(repoPath, 1);
+                    } catch (Exception e) {
+                        logList = List.of();
+                    }
                     String lastCommitMsg = logList.isEmpty() ? "" : logList.get(0).message();
                     var lastCommitDate = logList.isEmpty() ? null : logList.get(0).date();
 
@@ -297,8 +320,14 @@ public class MainController {
                     unstagedListView.setItems(FXCollections.observableArrayList(data.unstaged));
                     stagedListView.setItems(FXCollections.observableArrayList(data.staged));
 
-                    branchComboBox.setItems(FXCollections.observableArrayList(data.branches));
-                    branchComboBox.setValue(data.currentBranch);
+                    // 브랜치 ComboBox 갱신 (onBranchChanged 트리거 방지)
+                    updatingBranchComboBox = true;
+                    try {
+                        branchComboBox.setItems(FXCollections.observableArrayList(data.branches));
+                        branchComboBox.setValue(data.currentBranch);
+                    } finally {
+                        updatingBranchComboBox = false;
+                    }
 
                     updateAheadBehind(repo);
                     updateStatusBar(repo);
@@ -468,32 +497,165 @@ public class MainController {
 
     @FXML
     private void onNewBranch() {
+        if (selectedRepo == null) return;
         log.info("새 브랜치 생성 버튼 클릭");
-        // Step 8에서 구현
-        setStatus("새 브랜치 — Step 8에서 구현 예정");
+
+        TextInputDialog dialog = new TextInputDialog();
+        dialog.initOwner(sidebar.getScene().getWindow());
+        dialog.setTitle("새 브랜치 생성");
+        dialog.setHeaderText("브랜치 이름을 입력하세요");
+        dialog.setContentText("이름:");
+
+        dialog.showAndWait().ifPresent(name -> {
+            if (name.isBlank()) return;
+
+            TaskManager taskManager = GitMiniApp.getTaskManager();
+            GitService gitService = GitMiniApp.getGitService();
+            if (taskManager == null || gitService == null) return;
+
+            Repository targetRepo = selectedRepo;
+            Path repoPath = Path.of(targetRepo.getPath());
+            setStatus("브랜치 생성 중...");
+            taskManager.run(
+                    () -> { gitService.createBranch(repoPath, name.trim()); return null; },
+                    result -> {
+                        refreshRepoDetailWithStatus(targetRepo, "✓ 브랜치 생성 완료: " + name.trim());
+                        log.info("브랜치 생성 완료: {}", name.trim());
+                    },
+                    error -> {
+                        log.error("브랜치 생성 실패: {}", name, error);
+                        showErrorAlert("브랜치 생성 실패", error.getMessage());
+                        setStatus("브랜치 생성 실패");
+                    }
+            );
+        });
+    }
+
+    /**
+     * 브랜치 ComboBox 변경 시 호출된다. initialize()에서 리스너로 등록.
+     */
+    private void onBranchChanged(String newBranch) {
+        if (updatingBranchComboBox) return; // 프로그래밍 갱신 중에는 무시
+        if (selectedRepo == null || newBranch == null || newBranch.isEmpty()) return;
+        // 현재 브랜치와 같으면 무시
+        if (newBranch.equals(selectedRepo.getCurrentBranch())) return;
+
+        log.info("브랜치 전환: {} → {}", selectedRepo.getCurrentBranch(), newBranch);
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus("브랜치 전환 중...");
+        taskManager.run(
+                () -> { gitService.checkout(repoPath, newBranch); return null; },
+                result -> {
+                    refreshRepoDetailWithStatus(targetRepo, "✓ 브랜치 전환: " + newBranch);
+                    log.info("브랜치 전환 완료: {}", newBranch);
+                },
+                error -> {
+                    log.error("브랜치 전환 실패: {}", newBranch, error);
+                    showErrorAlert("브랜치 전환 실패", error.getMessage());
+                    // 실패 시 이전 브랜치로 복원
+                    branchComboBox.setValue(targetRepo.getCurrentBranch());
+                    setStatus("브랜치 전환 실패");
+                }
+        );
     }
 
     // ========== 원격 액션 ==========
 
+    /** 네트워크 작업 중 원격 버튼들을 비활성화/활성화. */
+    private void setRemoteButtonsDisable(boolean disable) {
+        fetchBtn.setDisable(disable);
+        pullBtn.setDisable(disable);
+        pushBtn.setDisable(disable);
+    }
+
     @FXML
     private void onFetch() {
-        log.info("Fetch 버튼 클릭");
-        // Step 8에서 구현
-        setStatus("Fetch — Step 8에서 구현 예정");
+        if (selectedRepo == null) return;
+        log.info("Fetch 클릭");
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus("Fetch 중...");
+        setRemoteButtonsDisable(true);
+        taskManager.run(
+                () -> { gitService.fetch(repoPath); return null; },
+                result -> {
+                    setRemoteButtonsDisable(false);
+                    refreshRepoDetailWithStatus(targetRepo, "✓ Fetch 완료");
+                },
+                error -> {
+                    setRemoteButtonsDisable(false);
+                    log.error("Fetch 실패", error);
+                    showErrorAlert("Fetch 실패", error.getMessage());
+                    setStatus("Fetch 실패");
+                }
+        );
     }
 
     @FXML
     private void onPull() {
-        log.info("Pull 버튼 클릭");
-        // Step 8에서 구현
-        setStatus("Pull — Step 8에서 구현 예정");
+        if (selectedRepo == null) return;
+        log.info("Pull 클릭");
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus("Pull 중...");
+        setRemoteButtonsDisable(true);
+        taskManager.run(
+                () -> { gitService.pull(repoPath); return null; },
+                result -> {
+                    setRemoteButtonsDisable(false);
+                    refreshRepoDetailWithStatus(targetRepo, "✓ Pull 완료");
+                },
+                error -> {
+                    setRemoteButtonsDisable(false);
+                    log.error("Pull 실패", error);
+                    showErrorAlert("Pull 실패", error.getMessage());
+                    setStatus("Pull 실패");
+                }
+        );
     }
 
     @FXML
     private void onPush() {
-        log.info("Push 버튼 클릭");
-        // Step 8에서 구현
-        setStatus("Push — Step 8에서 구현 예정");
+        if (selectedRepo == null) return;
+        log.info("Push 클릭");
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus("Push 중...");
+        setRemoteButtonsDisable(true);
+        taskManager.run(
+                () -> { gitService.push(repoPath); return null; },
+                result -> {
+                    setRemoteButtonsDisable(false);
+                    refreshRepoDetailWithStatus(targetRepo, "✓ Push 완료");
+                },
+                error -> {
+                    setRemoteButtonsDisable(false);
+                    log.error("Push 실패", error);
+                    showErrorAlert("Push 실패", error.getMessage());
+                    setStatus("Push 실패");
+                }
+        );
     }
 
     // ========== 스테이징 액션 ==========
