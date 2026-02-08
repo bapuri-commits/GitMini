@@ -153,4 +153,9 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 
 ## 3. 종료
 
-미완료. Phase 3 검증 완료 후 기록 예정.
+**Phase 3 완료.** 2026-02-08.
+
+- **검증**: `gradlew build` / `gradlew test` 153개 PASSED. 사용자 체크포인트 전체 통과.
+- **완료 요약**: 13개 Step 전부 구현·검증. 사이드바, 파일 변경(검색 포함), Diff 뷰어, 커밋, 액션 바(Push/Pull/Fetch + upstream 자동), 브랜치 전환/생성, 커밋 히스토리, Command Log(실시간+복사), 상태바(로딩+토스트), 컨텍스트 메뉴(Discard/Stage/Unstage/Explorer/CopyPath), 키보드 단축키, 드래그&드롭 레포 추가, 자동 Fetch.
+- **추가 구현**: 원격 없음 표시, 에러 메시지 한국어 매핑, 대형 레포 1000개 제한+검색, config.json 원자적 저장, 브랜치 전환 ComboBox 무한루프 방지, Push upstream 자동 설정.
+- **다음 Phase**: Phase 4 (GitHub API 연동) — PAT 설정, GitHubService, Clone, (선택) 레포 생성.
