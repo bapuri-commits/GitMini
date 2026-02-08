@@ -1,0 +1,50 @@
+/*
+ * GitMini 커스텀 스타일 — AtlantaFX 테마 위에 덧씌운다.
+ * AtlantaFX의 looked-up color 변수 (-color-*) 를 활용한다.
+ */
+
+/* === 사이드바 === */
+
+.sidebar {
+    -fx-padding: 0;
+}
+
+.sidebar-header {
+    -fx-padding: 12 16 8 16;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.sidebar-actions {
+    -fx-padding: 8 12;
+    -fx-border-width: 1 0 0 0;
+    -fx-border-color: -color-border-default;
+}
+
+/* === 메인 콘텐츠 === */
+
+.main-content {
+    -fx-padding: 16;
+}
+
+.welcome-text {
+    -fx-font-size: 16px;
+    -fx-text-fill: -color-fg-muted;
+}
+
+/* === 상태바 === */
+
+.status-bar {
+    -fx-padding: 4 12;
+    -fx-border-width: 1 0 0 0;
+    -fx-border-color: -color-border-default;
+    -fx-font-size: 12px;
+}
+
+/* === Command Log 패널 (Phase 3에서 활성화) === */
+
+.command-log {
+    -fx-padding: 8 12;
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 12px;
+}

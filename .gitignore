@@ -37,6 +37,9 @@ bin/
 .cursor/*
 !.cursor/rules/
 
+### Runtime logs ###
+logs/
+
 ### OS files ###
 .DS_Store
 Thumbs.db
