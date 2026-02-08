@@ -305,6 +305,7 @@ public class MainController {
                                     r -> loadRepoListWithStatus("✓ 드롭으로 레포 추가: " + name),
                                     err -> {
                                         log.warn("드롭 레포 추가 실패: {}: {}", name, err.getMessage());
+                                        showErrorAlert("레포 추가 실패", name + "\n\n" + err.getMessage());
                                         setStatus("레포 추가 실패: " + name);
                                     }
                             );
@@ -1360,7 +1361,10 @@ public class MainController {
     }
 
     private void doAutoFetch() {
-        if (selectedRepo == null || !selectedRepo.isHasRemote()) return;
+        if (selectedRepo == null || !selectedRepo.isHasRemote()) {
+            log.debug("자동 Fetch 스킵: 레포 미선택 또는 원격 없음");
+            return;
+        }
 
         TaskManager taskManager = GitMiniApp.getTaskManager();
         GitService gitService = GitMiniApp.getGitService();
@@ -1368,12 +1372,19 @@ public class MainController {
 
         Repository targetRepo = selectedRepo;
         Path repoPath = Path.of(targetRepo.getPath());
-        log.debug("자동 Fetch 실행: {}", targetRepo.getName());
+
+        // 추가 방어: 실제로 원격이 있는지 실시간 확인
         taskManager.run(
-                () -> { gitService.fetch(repoPath); return null; },
+                () -> {
+                    if (!gitService.hasRemote(repoPath)) return null; // 원격 없으면 스킵
+                    gitService.fetch(repoPath);
+                    return "fetched";
+                },
                 result -> {
-                    refreshRepoDetailWithStatus(targetRepo, "✓ 자동 Fetch 완료");
-                    log.debug("자동 Fetch 완료: {}", targetRepo.getName());
+                    if (result != null) {
+                        refreshRepoDetailWithStatus(targetRepo, "✓ 자동 Fetch 완료");
+                        log.debug("자동 Fetch 완료: {}", targetRepo.getName());
+                    }
                 },
                 error -> log.debug("자동 Fetch 실패 (무시): {}", error.getMessage())
         );
