@@ -115,6 +115,12 @@
     -fx-text-fill: -color-fg-muted;
 }
 
+.search-field {
+    -fx-pref-height: 24;
+    -fx-font-size: 12px;
+    -fx-prompt-text-fill: -color-fg-muted;
+}
+
 .stage-btn {
     -fx-min-width: 32;
     -fx-padding: 4 6;

@@ -88,11 +88,27 @@ public class ConfigManager {
      */
     public void save(AppConfig config) {
         try {
+            config.validate(); // NaN 등 비정상 값 방어
             Files.createDirectories(configDir);
-            try (Writer writer = Files.newBufferedWriter(configFile, StandardCharsets.UTF_8)) {
+            // 원자적 저장: 임시 파일에 쓴 후 이동 (강제 종료 시 파일 깨짐 방지)
+            Path tempFile = configDir.resolve(CONFIG_FILE_NAME + ".tmp");
+            try (Writer writer = Files.newBufferedWriter(tempFile, StandardCharsets.UTF_8)) {
                 gson.toJson(config, writer);
             }
+            Files.move(tempFile, configFile,
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+                    java.nio.file.StandardCopyOption.ATOMIC_MOVE);
             log.debug("설정 저장 완료: {}", configFile);
+        } catch (java.nio.file.AtomicMoveNotSupportedException e) {
+            // ATOMIC_MOVE 미지원 시 일반 이동
+            try {
+                Path tempFile = configDir.resolve(CONFIG_FILE_NAME + ".tmp");
+                Files.move(tempFile, configFile, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                log.debug("설정 저장 완료 (non-atomic): {}", configFile);
+            } catch (IOException ex) {
+                log.error("설정 저장 실패: {}", configFile, ex);
+                throw new ConfigException("설정 저장 실패: " + ex.getMessage(), ex);
+            }
         } catch (IOException e) {
             log.error("설정 저장 실패: {}", configFile, e);
             throw new ConfigException("설정 저장 실패: " + e.getMessage(), e);

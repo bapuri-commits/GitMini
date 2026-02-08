@@ -12,6 +12,7 @@
 <?import javafx.scene.control.Separator?>
 <?import javafx.scene.control.SplitPane?>
 <?import javafx.scene.control.TextArea?>
+<?import javafx.scene.control.TextField?>
 <?import javafx.scene.control.TitledPane?>
 <?import javafx.scene.layout.BorderPane?>
 <?import javafx.scene.layout.HBox?>
@@ -91,6 +92,7 @@
                             <!-- Unstaged 파일 목록 -->
                             <VBox HBox.hgrow="ALWAYS" spacing="4">
                                 <Label text="변경된 파일" styleClass="section-header"/>
+                                <TextField fx:id="unstagedSearchField" promptText="파일명 검색..." styleClass="search-field"/>
                                 <ListView fx:id="unstagedListView" VBox.vgrow="ALWAYS"/>
                             </VBox>
 
@@ -110,6 +112,7 @@
                             <!-- Staged 파일 목록 -->
                             <VBox HBox.hgrow="ALWAYS" spacing="4">
                                 <Label text="스테이징된 파일" styleClass="section-header"/>
+                                <TextField fx:id="stagedSearchField" promptText="파일명 검색..." styleClass="search-field"/>
                                 <ListView fx:id="stagedListView" VBox.vgrow="ALWAYS"/>
                             </VBox>
                         </HBox>

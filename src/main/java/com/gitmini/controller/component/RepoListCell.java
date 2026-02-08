@@ -103,7 +103,12 @@ public class RepoListCell extends ListCell<Repository> {
         }
 
         nameLabel.setText(repo.getName());
-        branchLabel.setText(repo.getCurrentBranch());
+        // 브랜치 줄에 원격 없으면 "main (원격 없음)" 형태로 표시
+        String branchText = repo.getCurrentBranch();
+        if (!repo.isHasRemote() && (branchText != null && !branchText.isEmpty())) {
+            branchText = branchText + " (원격 없음)";
+        }
+        branchLabel.setText(branchText);
 
         // 상태 아이콘 — 양쪽 클래스를 모두 제거 후 하나만 추가 (셀 재사용 시 누적 방지)
         statusLabel.getStyleClass().removeAll("status-clean", "status-dirty");
@@ -115,17 +120,21 @@ public class RepoListCell extends ListCell<Repository> {
             statusLabel.getStyleClass().add("status-dirty");
         }
 
-        // ahead/behind 표시
-        int ahead = repo.getAhead();
-        int behind = repo.getBehind();
-        if (ahead > 0 || behind > 0) {
-            StringBuilder ab = new StringBuilder();
-            if (ahead > 0) ab.append("↑").append(ahead);
-            if (ahead > 0 && behind > 0) ab.append(" ");
-            if (behind > 0) ab.append("↓").append(behind);
-            aheadBehindLabel.setText(ab.toString());
-        } else {
+        // ahead/behind (원격 없을 땐 브랜치 줄에 이미 "원격 없음" 표시하므로 여기는 비움)
+        if (!repo.isHasRemote()) {
             aheadBehindLabel.setText("");
+        } else {
+            int ahead = repo.getAhead();
+            int behind = repo.getBehind();
+            if (ahead > 0 || behind > 0) {
+                StringBuilder ab = new StringBuilder();
+                if (ahead > 0) ab.append("↑").append(ahead);
+                if (ahead > 0 && behind > 0) ab.append(" ");
+                if (behind > 0) ab.append("↓").append(behind);
+                aheadBehindLabel.setText(ab.toString());
+            } else {
+                aheadBehindLabel.setText("");
+            }
         }
 
         pathTooltip.setText(repo.getPath());

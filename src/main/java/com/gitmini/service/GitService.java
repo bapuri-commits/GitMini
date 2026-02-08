@@ -247,6 +247,24 @@ public class GitService {
         return new int[]{0, 0};
     }
 
+    /**
+     * 레포에 원격(remote)이 하나라도 설정되어 있는지 조회한다.
+     *
+     * @param repoPath 레포 경로
+     * @return 원격이 있으면 true, 없거나 조회 실패 시 false
+     */
+    public boolean hasRemote(Path repoPath) {
+        try {
+            GitResult result = executor.execute(repoPath,
+                    GitCommandBuilder.git().remote().build());
+            return result.isSuccess() && result.stdout() != null
+                    && !result.stdout().trim().isEmpty();
+        } catch (Exception e) {
+            log.debug("원격 목록 조회 실패: {}", e.getMessage());
+            return false;
+        }
+    }
+
     // ========== Log ==========
 
     /**

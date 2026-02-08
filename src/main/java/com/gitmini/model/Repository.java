@@ -18,6 +18,8 @@ public class Repository {
     private LocalDateTime lastCommitDate;
     private int ahead;
     private int behind;
+    /** 원격(remote)이 하나라도 설정되어 있는지. */
+    private boolean hasRemote;
 
     public Repository(String path) {
         this.path = path;
@@ -28,6 +30,7 @@ public class Repository {
         this.lastCommitDate = null;
         this.ahead = 0;
         this.behind = 0;
+        this.hasRemote = false;
     }
 
     // --- Immutable fields ---
@@ -88,6 +91,14 @@ public class Repository {
 
     public void setBehind(int behind) {
         this.behind = behind;
+    }
+
+    public boolean isHasRemote() {
+        return hasRemote;
+    }
+
+    public void setHasRemote(boolean hasRemote) {
+        this.hasRemote = hasRemote;
     }
 
     /**

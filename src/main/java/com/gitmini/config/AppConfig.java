@@ -46,8 +46,10 @@ public class AppConfig {
         if (defaultClonePath == null) defaultClonePath = "";
         if (externalTerminal == null) externalTerminal = "cmd";
         if (autoFetchIntervalMinutes <= 0) autoFetchIntervalMinutes = 5;
-        if (windowWidth <= 0) windowWidth = 1200;
-        if (windowHeight <= 0) windowHeight = 800;
+        if (windowWidth <= 0 || Double.isNaN(windowWidth)) windowWidth = 1200;
+        if (windowHeight <= 0 || Double.isNaN(windowHeight)) windowHeight = 800;
+        if (Double.isNaN(windowX)) windowX = -1;
+        if (Double.isNaN(windowY)) windowY = -1;
     }
 
     // --- Getters & Setters ---

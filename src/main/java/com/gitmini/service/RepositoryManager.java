@@ -185,6 +185,7 @@ public class RepositoryManager {
         int[] ab = gitService.aheadBehind(path);
         repo.setAhead(ab[0]);
         repo.setBehind(ab[1]);
+        repo.setHasRemote(gitService.hasRemote(path));
 
         List<CommitInfo> logList = gitService.log(path, 1);
         if (!logList.isEmpty()) {

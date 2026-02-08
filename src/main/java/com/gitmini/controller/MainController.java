@@ -14,6 +14,7 @@ import com.gitmini.service.GitService;
 import com.gitmini.service.RepositoryManager;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
 import javafx.fxml.FXML;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyCodeCombination;
@@ -46,6 +47,11 @@ public class MainController {
 
     private static final Logger log = LoggerFactory.getLogger(MainController.class);
 
+    /** 파일 변경 목록에 한 번에 표시할 최대 개수 (큰 레포 UI 프리즈 방지). 검색으로 범위 좁힘 가능. */
+    private static final int MAX_FILE_LIST_SIZE = 1000;
+    /** 커밋 히스토리 목록에 표시할 최대 커밋 수. */
+    private static final int COMMIT_HISTORY_MAX = 50;
+
     // ========== FXML 바인딩: 사이드바 ==========
 
     @FXML private SplitPane mainSplitPane;
@@ -73,6 +79,8 @@ public class MainController {
     // ========== FXML 바인딩: 파일 변경 영역 ==========
 
     @FXML private SplitPane contentSplitPane;
+    @FXML private TextField unstagedSearchField;
+    @FXML private TextField stagedSearchField;
     @FXML private ListView<FileChange> unstagedListView;
     @FXML private ListView<FileChange> stagedListView;
     @FXML private Button stageAllBtn;
@@ -122,6 +130,17 @@ public class MainController {
     /** 브랜치 ComboBox 프로그래밍 갱신 중 onBranchChanged 방지 플래그. */
     private boolean updatingBranchComboBox = false;
 
+    /** 현재 표시 중인 레포의 전체 unstaged/staged 개수 (목록이 잘렸을 때 상태바 표시용). */
+    private int totalUnstagedCount = 0;
+    private int totalStagedCount = 0;
+
+    /** 마지막으로 폴더를 선택한 디렉토리 (레포 추가 시 기억). */
+    private File lastBrowsedDir = null;
+
+    /** 검색 필터 적용 전 전체 목록 (최대 MAX_FILE_LIST_SIZE개). 검색 시 여기서 필터링. */
+    private ObservableList<FileChange> unstagedFullList = FXCollections.observableArrayList();
+    private ObservableList<FileChange> stagedFullList = FXCollections.observableArrayList();
+
     // ========== 초기화 ==========
 
     @FXML
@@ -148,6 +167,29 @@ public class MainController {
                 (obs, oldFile, newFile) -> onFileSelected(newFile, false));
         stagedListView.getSelectionModel().selectedItemProperty().addListener(
                 (obs, oldFile, newFile) -> onFileSelected(newFile, true));
+
+        // 파일 목록 검색: 입력 시 해당 목록만 필터링 (Unstaged / Staged 각각)
+        if (unstagedSearchField != null) {
+            unstagedSearchField.textProperty().addListener((obs, oldVal, newVal) -> applyFilterUnstaged());
+        }
+        if (stagedSearchField != null) {
+            stagedSearchField.textProperty().addListener((obs, oldVal, newVal) -> applyFilterStaged());
+        }
+
+        // 커밋 히스토리: ListCell — short hash, 메시지, 날짜 한 줄 표시
+        commitHistoryListView.setCellFactory(lv -> new ListCell<>() {
+            @Override
+            protected void updateItem(CommitInfo item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    return;
+                }
+                String shortHash = item.hash().length() > 7 ? item.hash().substring(0, 7) : item.hash();
+                String dateStr = item.date() != null ? item.date().toString().replace("T", " ").substring(0, Math.min(16, item.date().toString().length())) : "";
+                setText(shortHash + "  " + item.message() + "  " + dateStr);
+            }
+        });
 
         // 브랜치 ComboBox: 변경 이벤트 → 브랜치 전환
         branchComboBox.valueProperty().addListener(
@@ -232,8 +274,15 @@ public class MainController {
         repoNameLabel.setText(repo.getName());
 
         // 이전 레포의 잔여 데이터 정리
+        unstagedFullList.clear();
+        stagedFullList.clear();
+        if (unstagedSearchField != null) unstagedSearchField.clear();
+        if (stagedSearchField != null) stagedSearchField.clear();
         unstagedListView.setItems(FXCollections.observableArrayList());
         stagedListView.setItems(FXCollections.observableArrayList());
+        commitHistoryListView.setItems(FXCollections.observableArrayList());
+        totalUnstagedCount = 0;
+        totalStagedCount = 0;
         diffFileLabel.setText("Diff");
         diffContent.getChildren().clear();
         commitMessageArea.clear();
@@ -295,17 +344,18 @@ public class MainController {
 
                     List<com.gitmini.model.CommitInfo> logList;
                     try {
-                        logList = gitService.log(repoPath, 1);
+                        logList = gitService.log(repoPath, COMMIT_HISTORY_MAX);
                     } catch (Exception e) {
                         logList = List.of();
                     }
                     String lastCommitMsg = logList.isEmpty() ? "" : logList.get(0).message();
                     var lastCommitDate = logList.isEmpty() ? null : logList.get(0).date();
+                    boolean hasRemote = gitService.hasRemote(repoPath);
 
                     return new RepoDetailData(
                             currentBranch, unstaged, staged, branches,
-                            allChanges.size(), ab[0], ab[1],
-                            lastCommitMsg, lastCommitDate);
+                            allChanges.size(), ab[0], ab[1], hasRemote,
+                            lastCommitMsg, lastCommitDate, logList);
                 },
                 data -> {
                     // UI 스레드: Repository 필드 갱신 (스레드 안전)
@@ -313,12 +363,27 @@ public class MainController {
                     repo.setChangedFileCount(data.changedFileCount);
                     repo.setAhead(data.ahead);
                     repo.setBehind(data.behind);
+                    repo.setHasRemote(data.hasRemote());
                     repo.setLastCommitMessage(data.lastCommitMsg);
                     repo.setLastCommitDate(data.lastCommitDate);
 
-                    // UI 갱신
-                    unstagedListView.setItems(FXCollections.observableArrayList(data.unstaged));
-                    stagedListView.setItems(FXCollections.observableArrayList(data.staged));
+                    // 파일 목록: 큰 레포 방지를 위해 최대 MAX_FILE_LIST_SIZE개. 검색 필터용 전체 목록 저장
+                    List<FileChange> unstagedToShow = data.unstaged.size() <= MAX_FILE_LIST_SIZE
+                            ? data.unstaged
+                            : data.unstaged.stream().limit(MAX_FILE_LIST_SIZE).toList();
+                    List<FileChange> stagedToShow = data.staged.size() <= MAX_FILE_LIST_SIZE
+                            ? data.staged
+                            : data.staged.stream().limit(MAX_FILE_LIST_SIZE).toList();
+                    unstagedFullList.clear();
+                    unstagedFullList.addAll(unstagedToShow);
+                    stagedFullList.clear();
+                    stagedFullList.addAll(stagedToShow);
+                    if (unstagedSearchField != null) unstagedSearchField.clear();
+                    if (stagedSearchField != null) stagedSearchField.clear();
+                    applyFilterUnstaged();
+                    applyFilterStaged();
+                    totalUnstagedCount = data.unstaged.size();
+                    totalStagedCount = data.staged.size();
 
                     // 브랜치 ComboBox 갱신 (onBranchChanged 트리거 방지)
                     updatingBranchComboBox = true;
@@ -329,13 +394,19 @@ public class MainController {
                         updatingBranchComboBox = false;
                     }
 
+                    // 커밋 히스토리 목록 갱신
+                    commitHistoryListView.setItems(FXCollections.observableArrayList(data.commitHistory()));
+
                     updateAheadBehind(repo);
                     updateStatusBar(repo);
 
                     // 사이드바도 갱신 (변경 파일 수 등 반영)
                     repoListView.refresh();
 
-                    setStatus(completionStatus);
+                    boolean truncated = data.unstaged.size() > MAX_FILE_LIST_SIZE || data.staged.size() > MAX_FILE_LIST_SIZE;
+                    setStatus(truncated
+                            ? completionStatus + " (파일 목록 " + MAX_FILE_LIST_SIZE + "개만 표시)"
+                            : completionStatus);
                 },
                 error -> {
                     log.error("레포 상세 로드 실패: {}", repo.getName(), error);
@@ -353,8 +424,10 @@ public class MainController {
             int changedFileCount,
             int ahead,
             int behind,
+            boolean hasRemote,
             String lastCommitMsg,
-            java.time.LocalDateTime lastCommitDate
+            java.time.LocalDateTime lastCommitDate,
+            List<CommitInfo> commitHistory
     ) {}
 
     // ========== 사이드바 액션 ==========
@@ -363,33 +436,54 @@ public class MainController {
     private void onAddRepo() {
         log.info("레포 추가 버튼 클릭");
 
-        DirectoryChooser chooser = new DirectoryChooser();
-        chooser.setTitle("Git 레포지토리 폴더 선택");
-        File selected = chooser.showDialog(sidebar.getScene().getWindow());
-
-        if (selected == null) return; // 취소
+        // 여러 폴더를 연속으로 추가할 수 있도록 루프
+        boolean addMore = true;
+        int addedCount = 0;
 
         RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
         TaskManager taskManager = GitMiniApp.getTaskManager();
         if (repoManager == null || taskManager == null) return;
 
-        setStatus("레포 추가 중...");
-        taskManager.run(
-                () -> {
-                    repoManager.add(selected.toPath());
-                    return null;
-                },
-                result -> {
-                    log.info("레포 추가 완료: {}", selected.getName());
-                    // loadRepoList 완료 후 성공 메시지를 표시하기 위해 별도 메시지 전달
-                    loadRepoListWithStatus("✓ 레포 추가 완료: " + selected.getName());
-                },
-                error -> {
-                    log.error("레포 추가 실패: {}", selected, error);
-                    showErrorAlert("레포 추가 실패", error.getMessage());
-                    setStatus("레포 추가 실패");
-                }
-        );
+        while (addMore) {
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle("Git 레포지토리 폴더 선택" + (addedCount > 0 ? " (추가 선택, 취소하면 종료)" : ""));
+            if (lastBrowsedDir != null && lastBrowsedDir.isDirectory()) {
+                chooser.setInitialDirectory(lastBrowsedDir);
+            }
+
+            javafx.stage.Window owner = getMainWindow();
+            File selected = chooser.showDialog(owner);
+
+            if (selected == null) {
+                addMore = false; // 취소 → 루프 종료
+            } else {
+                lastBrowsedDir = selected.getParentFile(); // 마지막 경로 기억 (부모 폴더)
+                addedCount++;
+                final String name = selected.getName();
+                final File finalSelected = selected;
+                final int currentCount = addedCount;
+
+                setStatus("레포 추가 중: " + name + "...");
+                taskManager.run(
+                        () -> {
+                            repoManager.add(finalSelected.toPath());
+                            return null;
+                        },
+                        result -> {
+                            log.info("레포 추가 완료: {}", name);
+                            loadRepoListWithStatus("✓ 레포 " + currentCount + "개 추가 완료");
+                        },
+                        error -> {
+                            log.error("레포 추가 실패: {}", finalSelected, error);
+                            showErrorAlert("레포 추가 실패", name + ": " + error.getMessage());
+                            setStatus("레포 추가 실패");
+                        }
+                );
+            }
+        }
+        if (addedCount == 0) {
+            setStatus("레포 추가 취소");
+        }
     }
 
     @FXML
@@ -408,7 +502,8 @@ public class MainController {
         log.info("레포 제거 요청: {}", repo.getName());
 
         Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
-        confirm.initOwner(sidebar.getScene().getWindow());
+        javafx.stage.Window owner = getMainWindow();
+        if (owner != null) confirm.initOwner(owner);
         confirm.setTitle("레포 제거");
         confirm.setHeaderText(repo.getName());
         confirm.setContentText("이 레포를 목록에서 제거하시겠습니까?\n(로컬 파일은 삭제되지 않습니다)");
@@ -460,9 +555,9 @@ public class MainController {
         }
         branchStatusLabel.setText(repo.getCurrentBranch());
 
-        // unstaged + staged 별도 표시
-        int unstaged = unstagedListView.getItems() != null ? unstagedListView.getItems().size() : 0;
-        int staged = stagedListView.getItems() != null ? stagedListView.getItems().size() : 0;
+        // unstaged + staged 별도 표시 (목록 잘림 시 totalUnstagedCount/totalStagedCount 사용)
+        int unstaged = totalUnstagedCount > 0 ? totalUnstagedCount : (unstagedListView.getItems() != null ? unstagedListView.getItems().size() : 0);
+        int staged = totalStagedCount > 0 ? totalStagedCount : (stagedListView.getItems() != null ? stagedListView.getItems().size() : 0);
         if (unstaged > 0 || staged > 0) {
             StringBuilder sb = new StringBuilder();
             if (unstaged > 0) sb.append(unstaged).append(" 변경");
@@ -475,6 +570,10 @@ public class MainController {
     }
 
     private void updateAheadBehind(Repository repo) {
+        if (!repo.isHasRemote()) {
+            aheadBehindLabel.setText("(원격 없음)");
+            return;
+        }
         int ahead = repo.getAhead();
         int behind = repo.getBehind();
         StringBuilder sb = new StringBuilder();
@@ -484,13 +583,109 @@ public class MainController {
         aheadBehindLabel.setText(sb.toString());
     }
 
+    /** Unstaged 목록을 검색어로 필터링해 ListView에 반영. */
+    private void applyFilterUnstaged() {
+        String q = unstagedSearchField != null ? unstagedSearchField.getText() : null;
+        if (q == null || q.isBlank()) {
+            unstagedListView.setItems(unstagedFullList);
+            return;
+        }
+        String lower = q.trim().toLowerCase();
+        List<FileChange> filtered = unstagedFullList.stream()
+                .filter(f -> f.path().toLowerCase().contains(lower))
+                .toList();
+        unstagedListView.setItems(FXCollections.observableArrayList(filtered));
+    }
+
+    /** Staged 목록을 검색어로 필터링해 ListView에 반영. */
+    private void applyFilterStaged() {
+        String q = stagedSearchField != null ? stagedSearchField.getText() : null;
+        if (q == null || q.isBlank()) {
+            stagedListView.setItems(stagedFullList);
+            return;
+        }
+        String lower = q.trim().toLowerCase();
+        List<FileChange> filtered = stagedFullList.stream()
+                .filter(f -> f.path().toLowerCase().contains(lower))
+                .toList();
+        stagedListView.setItems(FXCollections.observableArrayList(filtered));
+    }
+
+    /**
+     * 메인 창을 소유자로 하여 에러 다이얼로그를 띄운다. 메인 창 중앙에 표시된다.
+     */
     private void showErrorAlert(String header, String content) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.initOwner(sidebar.getScene().getWindow());
+        javafx.stage.Window owner = getMainWindow();
+        if (owner != null) {
+            alert.initOwner(owner);
+        }
         alert.setTitle("오류");
         alert.setHeaderText(header);
         alert.setContentText(content);
         alert.showAndWait();
+    }
+
+    /** 메인 창(Stage) 참조. 다이얼로그 중앙 배치용. */
+    private javafx.stage.Window getMainWindow() {
+        if (statusBar != null && statusBar.getScene() != null && statusBar.getScene().getWindow() != null) {
+            return statusBar.getScene().getWindow();
+        }
+        if (sidebar != null && sidebar.getScene() != null && sidebar.getScene().getWindow() != null) {
+            return sidebar.getScene().getWindow();
+        }
+        if (repoDetailPane != null && repoDetailPane.getScene() != null && repoDetailPane.getScene().getWindow() != null) {
+            return repoDetailPane.getScene().getWindow();
+        }
+        return null;
+    }
+
+    /**
+     * Push/Pull/Fetch 등 원격 작업 실패 시 git raw 메시지를 사용자 친화적인 한국어로 변환한다.
+     */
+    private static String mapRemoteErrorMessage(String rawMessage) {
+        if (rawMessage == null) return "알 수 없는 오류";
+        String msg = rawMessage.trim().toLowerCase();
+        if (msg.contains("no upstream") || (msg.contains("upstream") && msg.contains("not set"))
+                || msg.contains("현재 브랜치에 위쪽 추적 브랜치가 없습니다")) {
+            return "이 레포에는 원격 저장소가 없습니다.\n\nPush하려면 터미널에서 'git remote add origin <URL>' 로 원격을 추가한 뒤 다시 시도해 주세요.";
+        }
+        if (msg.contains("could not resolve host") || msg.contains("unknown host") || msg.contains("name or service not known")) {
+            return "네트워크 연결을 확인하세요. (호스트를 찾을 수 없습니다)";
+        }
+        if (msg.contains("connection refused") || msg.contains("timed out") || msg.contains("connection timed out")) {
+            return "네트워크 연결을 확인하세요. (연결이 거부되었거나 시간이 초과되었습니다)";
+        }
+        if (msg.contains("authentication failed") || msg.contains("permission denied") || msg.contains("access denied")) {
+            return "인증에 실패했습니다. 자격 증명을 확인하세요.";
+        }
+        if (msg.contains("rejected") && msg.contains("non-fast-forward")) {
+            return "원격에 새 커밋이 있습니다. 먼저 Pull 한 뒤 다시 Push 하세요.";
+        }
+        if (msg.contains("no configured push destination") || msg.contains("does not have any remotes")) {
+            return "이 레포에는 원격 저장소가 없습니다.\n\n터미널에서 'git remote add origin <URL>' 로 원격을 추가한 뒤 다시 시도해 주세요.";
+        }
+        return rawMessage;
+    }
+
+    /**
+     * 브랜치 전환 실패 시 git raw 메시지를 사용자 친화적인 한국어로 변환한다.
+     */
+    private static String mapBranchErrorMessage(String rawMessage) {
+        if (rawMessage == null) return "알 수 없는 오류";
+        String msg = rawMessage.trim().toLowerCase();
+        if (msg.contains("your local changes") || msg.contains("would be overwritten")
+                || msg.contains("conflict") || msg.contains("uncommitted changes")) {
+            return "커밋하지 않은 변경이 있어 브랜치를 전환할 수 없습니다.\n\n먼저 변경 사항을 커밋하거나 Stash하세요.";
+        }
+        if (msg.contains("pathspec") && msg.contains("did not match")) {
+            return "해당 브랜치를 찾을 수 없습니다.";
+        }
+        // 너무 긴 에러 메시지 잘라내기 (git이 변경 파일 목록을 쭉 붙일 때)
+        if (rawMessage.length() > 300) {
+            return rawMessage.substring(0, 300) + "\n\n... (메시지 축약됨)";
+        }
+        return rawMessage;
     }
 
     // ========== 브랜치 액션 ==========
@@ -501,7 +696,8 @@ public class MainController {
         log.info("새 브랜치 생성 버튼 클릭");
 
         TextInputDialog dialog = new TextInputDialog();
-        dialog.initOwner(sidebar.getScene().getWindow());
+        javafx.stage.Window owner = getMainWindow();
+        if (owner != null) dialog.initOwner(owner);
         dialog.setTitle("새 브랜치 생성");
         dialog.setHeaderText("브랜치 이름을 입력하세요");
         dialog.setContentText("이름:");
@@ -557,9 +753,14 @@ public class MainController {
                 },
                 error -> {
                     log.error("브랜치 전환 실패: {}", newBranch, error);
-                    showErrorAlert("브랜치 전환 실패", error.getMessage());
-                    // 실패 시 이전 브랜치로 복원
-                    branchComboBox.setValue(targetRepo.getCurrentBranch());
+                    showErrorAlert("브랜치 전환 실패", mapBranchErrorMessage(error.getMessage()));
+                    // 실패 시 이전 브랜치로 복원 (onBranchChanged 재트리거 방지)
+                    updatingBranchComboBox = true;
+                    try {
+                        branchComboBox.setValue(targetRepo.getCurrentBranch());
+                    } finally {
+                        updatingBranchComboBox = false;
+                    }
                     setStatus("브랜치 전환 실패");
                 }
         );
@@ -596,7 +797,7 @@ public class MainController {
                 error -> {
                     setRemoteButtonsDisable(false);
                     log.error("Fetch 실패", error);
-                    showErrorAlert("Fetch 실패", error.getMessage());
+                    showErrorAlert("Fetch 실패", mapRemoteErrorMessage(error.getMessage()));
                     setStatus("Fetch 실패");
                 }
         );
@@ -624,7 +825,7 @@ public class MainController {
                 error -> {
                     setRemoteButtonsDisable(false);
                     log.error("Pull 실패", error);
-                    showErrorAlert("Pull 실패", error.getMessage());
+                    showErrorAlert("Pull 실패", mapRemoteErrorMessage(error.getMessage()));
                     setStatus("Pull 실패");
                 }
         );
@@ -652,7 +853,7 @@ public class MainController {
                 error -> {
                     setRemoteButtonsDisable(false);
                     log.error("Push 실패", error);
-                    showErrorAlert("Push 실패", error.getMessage());
+                    showErrorAlert("Push 실패", mapRemoteErrorMessage(error.getMessage()));
                     setStatus("Push 실패");
                 }
         );

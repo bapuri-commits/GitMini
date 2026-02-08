@@ -108,6 +108,11 @@ public class GitCommandBuilder {
         return this;
     }
 
+    public GitCommandBuilder remote() {
+        args.add("remote");
+        return this;
+    }
+
     public GitCommandBuilder version() {
         args.add("--version");
         return this;
