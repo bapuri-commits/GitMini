@@ -104,6 +104,13 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 - `commitHistoryListView` CellFactory: short hash(7자), 메시지, 날짜.
 - 레포 선택 시 초기화, 상세 갱신 시 최근 50개 표시.
 
+### Step 10: Command Log 패널
+
+- **CellFactory**: 시각(HH:mm:ss), 성공/실패 아이콘(✓/✗), 명령어, 소요시간(ms) 한 줄 표시. 실패 시 빨간색.
+- **실시간 갱신**: `GitMiniApp`에서 `GitCommandRecord`를 EventBus로 직접 발행 → MainController가 `GitCommandRecord.class` 구독 → `commandLogListView.getItems().add(0, record)` 로 최신이 위에.
+- **최대 500건** 유지 (초과 시 오래된 것 제거).
+- **우클릭 컨텍스트 메뉴**: "명령어 복사" / "출력 복사" — 클립보드에 복사.
+
 ---
 
 ## Phase 3 워크플로
@@ -118,7 +125,7 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 
 | Step | 내용 | 상태 |
 |------|------|------|
-| 10 | Command Log 패널 | 대기 |
+| 10 | Command Log 패널 | 완료 |
 | 11 | 상태바 + 비동기 피드백 + 토스트 | 대기 |
 | 12 | 컨텍스트 메뉴 + 키보드 단축키 | 대기 |
 | 13 | 드래그 & 드롭 + 자동 Fetch | 대기 |
