@@ -2,8 +2,10 @@ package com.gitmini.controller;
 
 import com.gitmini.GitMiniApp;
 import com.gitmini.async.TaskManager;
+import com.gitmini.controller.component.DiffRenderer;
 import com.gitmini.controller.component.FileChangeListCell;
 import com.gitmini.controller.component.RepoListCell;
+import com.gitmini.model.DiffEntry;
 import com.gitmini.model.CommitInfo;
 import com.gitmini.model.FileChange;
 import com.gitmini.model.GitCommandRecord;
@@ -586,7 +588,8 @@ public class MainController {
     // ========== 파일 선택 → Diff 연동 ==========
 
     /**
-     * 파일 변경 목록에서 파일을 선택했을 때 호출된다. Step 6에서 Diff 표시 구현.
+     * 파일 변경 목록에서 파일을 선택했을 때 호출된다.
+     * staged/unstaged에 따라 적절한 diff를 비동기로 로드하여 Diff 뷰어에 표시한다.
      */
     private void onFileSelected(FileChange file, boolean staged) {
         // 재진입 방지: clearSelection()이 반대쪽 리스너를 트리거하여
@@ -603,21 +606,95 @@ public class MainController {
             log.debug("파일 선택: {} (staged={})", file.path(), staged);
             diffFileLabel.setText(file.path());
 
-            // 다른 쪽 리스트의 선택 해제 (unstaged 선택 시 staged 해제, 반대도)
+            // 다른 쪽 리스트의 선택 해제
             if (staged) {
                 unstagedListView.getSelectionModel().clearSelection();
             } else {
                 stagedListView.getSelectionModel().clearSelection();
             }
 
-            // Step 6에서 Diff 로드 구현
-            diffContent.getChildren().clear();
-            Label placeholder = new Label("Diff 표시 — Step 6에서 구현");
-            placeholder.getStyleClass().add("diff-line-context");
-            diffContent.getChildren().add(placeholder);
+            // Diff 비동기 로드
+            loadDiff(file, staged);
         } finally {
             updatingFileSelection = false;
         }
+    }
+
+    /**
+     * 선택된 파일의 diff를 비동기로 로드하여 Diff 뷰어에 표시한다.
+     * staged 파일이면 git diff --cached, unstaged면 git diff를 사용한다.
+     */
+    /** 현재 diff 로딩 대상 파일. 콜백에서 스테일 체크용. */
+    private String currentDiffFilePath = null;
+
+    private void loadDiff(FileChange file, boolean staged) {
+        if (selectedRepo == null) return;
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Path repoPath = Path.of(selectedRepo.getPath());
+
+        // 현재 diff 대상 파일 기록 (콜백에서 스테일 체크)
+        currentDiffFilePath = file.path();
+
+        // 로딩 표시 + 스크롤 리셋
+        diffContent.getChildren().clear();
+        diffScrollPane.setVvalue(0);
+        Label loading = new Label("Diff 로딩 중...");
+        loading.getStyleClass().add("diff-line-context");
+        diffContent.getChildren().add(loading);
+
+        taskManager.run(
+                () -> {
+                    if (staged) {
+                        return gitService.diffStaged(repoPath);
+                    } else {
+                        if (file.type() == FileChange.ChangeType.UNTRACKED) {
+                            return List.<DiffEntry>of();
+                        }
+                        return gitService.diffFile(repoPath, file.path());
+                    }
+                },
+                entries -> {
+                    // 스테일 체크: 콜백 실행 시점에 다른 파일이 선택되었으면 무시
+                    if (!file.path().equals(currentDiffFilePath)) {
+                        return;
+                    }
+
+                    // staged diff는 전체를 반환하므로 해당 파일만 필터링
+                    List<DiffEntry> filtered;
+                    if (staged) {
+                        filtered = entries.stream()
+                                .filter(e -> e.newPath().equals(file.path())
+                                        || e.oldPath().equals(file.path()))
+                                .toList();
+                    } else {
+                        filtered = entries;
+                    }
+
+                    if (filtered.isEmpty() && file.type() == FileChange.ChangeType.UNTRACKED) {
+                        diffContent.getChildren().clear();
+                        Label info = new Label("새 파일 (untracked) — diff 없음");
+                        info.getStyleClass().add("diff-line-hunk");
+                        diffContent.getChildren().add(info);
+                    } else {
+                        DiffRenderer.render(diffContent, filtered);
+                    }
+
+                    // 렌더링 후 스크롤을 맨 위로
+                    diffScrollPane.setVvalue(0);
+                },
+                error -> {
+                    if (!file.path().equals(currentDiffFilePath)) return;
+                    log.error("Diff 로드 실패: {}", file.path(), error);
+                    diffContent.getChildren().clear();
+                    Label err = new Label("Diff 로드 실패: " + error.getMessage());
+                    err.getStyleClass().add("diff-line-removed");
+                    diffContent.getChildren().add(err);
+                }
+        );
     }
 
     // ========== 커밋 액션 ==========

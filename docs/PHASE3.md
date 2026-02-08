@@ -214,6 +214,21 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 
 **검증**: `gradlew clean test` → 153개 테스트 전체 PASSED.
 
+### Step 6: Diff 뷰어
+
+**구현**
+- `controller/component/DiffRenderer.java` (신규): 유틸리티 클래스.
+  - `render(VBox, List<DiffEntry>)` — DiffEntry → styled Labels 렌더링.
+  - Hunk 헤더 (@@ ... @@) + 각 줄 (추가/삭제/컨텍스트).
+  - 빈 diff 시 "변경 내용이 없습니다" 표시.
+- `MainController.java` 수정:
+  - `onFileSelected` → `loadDiff(file, staged)` 호출.
+  - `loadDiff()`: 비동기로 staged면 `diffStaged`, unstaged면 `diffFile` 호출 후 `DiffRenderer.render()`.
+  - Untracked 파일은 "새 파일 (untracked) — diff 없음" 표시.
+  - Staged diff는 전체를 반환하므로 파일명으로 필터링.
+
+**검증**: `gradlew clean test` → 153개 테스트 전체 PASSED.
+
 ---
 
 ## 3. 종료
