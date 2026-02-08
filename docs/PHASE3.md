@@ -192,6 +192,28 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 
 **검증**: `gradlew clean test` → 153개 테스트 전체 PASSED.
 
+### Step 5: 파일 변경 영역 (Unstaged/Staged + Stage/Unstage)
+
+**구현**
+- `controller/component/FileChangeListCell.java` (신규): Custom ListCell.
+  - 변경 유형 아이콘: M(주황), A(초록), D(빨강), R(파랑), ?(흐림).
+  - 파일명 표시 (경로의 마지막 구성요소). 전체 경로는 툴팁.
+  - CSS 클래스 누적 방지 (`removeAll` 후 `add`).
+- `MainController.java` 추가:
+  - `initialize()`: FileChangeListCell 설정, 파일 선택 이벤트 리스너 등록.
+  - `onStageAll()`: `gitService.addAll()` 비동기 → `refreshRepoDetail()`.
+  - `onStage()`: 선택된 파일 1개 `gitService.add()` 비동기.
+  - `onUnstage()`: 선택된 파일 1개 `gitService.unstage()` 비동기.
+  - `onUnstageAll()`: 모든 staged 파일 `gitService.unstage()` 비동기.
+  - `onFileSelected(file, staged)`: Diff 라벨 갱신, 반대쪽 리스트 선택 해제. Step 6에서 Diff 로드 구현.
+- `app.css`: 파일 변경 셀 스타일 (`.file-change-cell`, `.file-type-icon`, `.file-path`, `.type-*`).
+
+**설계 결정**
+- Stage/Unstage 후 `refreshRepoDetail()`로 전체 상태 갱신. 파일 목록, 브랜치, ahead/behind 모두 최신화.
+- 파일 선택 시 unstaged/staged 중 한 쪽만 선택 활성화 (반대쪽 자동 해제).
+
+**검증**: `gradlew clean test` → 153개 테스트 전체 PASSED.
+
 ---
 
 ## 3. 종료

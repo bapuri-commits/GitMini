@@ -121,6 +121,42 @@
     -fx-font-size: 11px;
 }
 
+/* 파일 변경 셀 (FileChangeListCell) */
+
+.file-change-cell {
+    -fx-padding: 2 4;
+}
+
+.file-type-icon {
+    -fx-font-family: "Consolas", "Courier New", monospace;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+}
+
+.file-path {
+    -fx-font-size: 12px;
+}
+
+.type-modified {
+    -fx-text-fill: -color-warning-fg;
+}
+
+.type-added {
+    -fx-text-fill: -color-success-fg;
+}
+
+.type-deleted {
+    -fx-text-fill: -color-danger-fg;
+}
+
+.type-renamed {
+    -fx-text-fill: -color-accent-fg;
+}
+
+.type-untracked {
+    -fx-text-fill: -color-fg-subtle;
+}
+
 /* ================================================================ */
 /* Diff 뷰어                                                         */
 /* ================================================================ */

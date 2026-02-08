@@ -2,6 +2,7 @@ package com.gitmini.controller;
 
 import com.gitmini.GitMiniApp;
 import com.gitmini.async.TaskManager;
+import com.gitmini.controller.component.FileChangeListCell;
 import com.gitmini.controller.component.RepoListCell;
 import com.gitmini.model.CommitInfo;
 import com.gitmini.model.FileChange;
@@ -109,6 +110,9 @@ public class MainController {
     /** 현재 선택된 레포. null이면 미선택. */
     private Repository selectedRepo;
 
+    /** 파일 선택 리스너 재진입 방지 플래그. */
+    private boolean updatingFileSelection = false;
+
     // ========== 초기화 ==========
 
     @FXML
@@ -125,6 +129,16 @@ public class MainController {
         // 사이드바: 선택 이벤트
         repoListView.getSelectionModel().selectedItemProperty().addListener(
                 (obs, oldRepo, newRepo) -> onRepoSelected(newRepo));
+
+        // 파일 변경 목록: Custom ListCell 설정
+        unstagedListView.setCellFactory(lv -> new FileChangeListCell());
+        stagedListView.setCellFactory(lv -> new FileChangeListCell());
+
+        // 파일 변경 목록: 선택 이벤트 → Diff 연동
+        unstagedListView.getSelectionModel().selectedItemProperty().addListener(
+                (obs, oldFile, newFile) -> onFileSelected(newFile, false));
+        stagedListView.getSelectionModel().selectedItemProperty().addListener(
+                (obs, oldFile, newFile) -> onFileSelected(newFile, true));
 
         // 초기 상태
         showWelcome();
@@ -200,9 +214,16 @@ public class MainController {
 
         // 액션 바 기본 정보 즉시 표시
         repoNameLabel.setText(repo.getName());
+
+        // 이전 레포의 잔여 데이터 정리
+        unstagedListView.setItems(FXCollections.observableArrayList());
+        stagedListView.setItems(FXCollections.observableArrayList());
+        diffFileLabel.setText("Diff");
+        diffContent.getChildren().clear();
         updateStatusBar(repo);
 
         // 상세 정보 비동기 로드 (파일 목록, 브랜치 등)
+        setStatus("상태 갱신 중...");
         refreshRepoDetail(repo);
     }
 
@@ -214,13 +235,19 @@ public class MainController {
      * </p>
      */
     private void refreshRepoDetail(Repository repo) {
+        refreshRepoDetailWithStatus(repo, "✓ Ready");
+    }
+
+    /**
+     * 선택된 레포의 상세 정보를 비동기로 갱신하고, 완료 후 지정된 상태 메시지를 표시한다.
+     */
+    private void refreshRepoDetailWithStatus(Repository repo, String completionStatus) {
         TaskManager taskManager = GitMiniApp.getTaskManager();
         GitService gitService = GitMiniApp.getGitService();
         if (taskManager == null || gitService == null) return;
 
         Path repoPath = Path.of(repo.getPath());
 
-        setStatus("상태 갱신 중...");
         taskManager.run(
                 () -> {
                     // 백그라운드: 모든 Git 정보를 1회씩만 조회하여 데이터 객체에 담음
@@ -268,7 +295,7 @@ public class MainController {
                     // 사이드바도 갱신 (변경 파일 수 등 반영)
                     repoListView.refresh();
 
-                    setStatus("✓ Ready");
+                    setStatus(completionStatus);
                 },
                 error -> {
                     log.error("레포 상세 로드 실패: {}", repo.getName(), error);
@@ -393,8 +420,18 @@ public class MainController {
         }
         branchStatusLabel.setText(repo.getCurrentBranch());
 
-        int changes = repo.getChangedFileCount();
-        changesCountLabel.setText(changes > 0 ? changes + " 변경" : "");
+        // unstaged + staged 별도 표시
+        int unstaged = unstagedListView.getItems() != null ? unstagedListView.getItems().size() : 0;
+        int staged = stagedListView.getItems() != null ? stagedListView.getItems().size() : 0;
+        if (unstaged > 0 || staged > 0) {
+            StringBuilder sb = new StringBuilder();
+            if (unstaged > 0) sb.append(unstaged).append(" 변경");
+            if (unstaged > 0 && staged > 0) sb.append(" | ");
+            if (staged > 0) sb.append(staged).append(" 스테이징");
+            changesCountLabel.setText(sb.toString());
+        } else {
+            changesCountLabel.setText("");
+        }
     }
 
     private void updateAheadBehind(Repository repo) {
@@ -452,26 +489,135 @@ public class MainController {
 
     @FXML
     private void onStageAll() {
+        if (selectedRepo == null) return;
         log.info("전체 Stage 클릭");
-        // Step 5에서 구현
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo; // 콜백 시점에 selectedRepo가 바뀌어도 원래 레포를 갱신
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus("전체 스테이징 중...");
+        taskManager.run(
+                () -> { gitService.addAll(repoPath); return null; },
+                result -> refreshRepoDetailWithStatus(targetRepo, "✓ 전체 Stage 완료"),
+                error -> {
+                    log.error("전체 Stage 실패", error);
+                    setStatus("Stage 실패: " + error.getMessage());
+                }
+        );
     }
 
     @FXML
     private void onStage() {
-        log.info("선택 Stage 클릭");
-        // Step 5에서 구현
+        if (selectedRepo == null) return;
+        FileChange selected = unstagedListView.getSelectionModel().getSelectedItem();
+        if (selected == null) return;
+        log.info("선택 Stage: {}", selected.path());
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus("스테이징 중...");
+        taskManager.run(
+                () -> { gitService.add(repoPath, List.of(selected.path())); return null; },
+                result -> refreshRepoDetailWithStatus(targetRepo, "✓ Stage 완료: " + selected.path()),
+                error -> {
+                    log.error("Stage 실패: {}", selected.path(), error);
+                    setStatus("Stage 실패: " + error.getMessage());
+                }
+        );
     }
 
     @FXML
     private void onUnstage() {
-        log.info("선택 Unstage 클릭");
-        // Step 5에서 구현
+        if (selectedRepo == null) return;
+        FileChange selected = stagedListView.getSelectionModel().getSelectedItem();
+        if (selected == null) return;
+        log.info("선택 Unstage: {}", selected.path());
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus("언스테이징 중...");
+        taskManager.run(
+                () -> { gitService.unstage(repoPath, List.of(selected.path())); return null; },
+                result -> refreshRepoDetailWithStatus(targetRepo, "✓ Unstage 완료: " + selected.path()),
+                error -> {
+                    log.error("Unstage 실패: {}", selected.path(), error);
+                    setStatus("Unstage 실패: " + error.getMessage());
+                }
+        );
     }
 
     @FXML
     private void onUnstageAll() {
+        if (selectedRepo == null) return;
         log.info("전체 Unstage 클릭");
-        // Step 5에서 구현
+
+        List<FileChange> stagedFiles = stagedListView.getItems();
+        if (stagedFiles.isEmpty()) return;
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        List<String> paths = stagedFiles.stream().map(FileChange::path).toList();
+        setStatus("전체 언스테이징 중...");
+        taskManager.run(
+                () -> { gitService.unstage(repoPath, paths); return null; },
+                result -> refreshRepoDetailWithStatus(targetRepo, "✓ 전체 Unstage 완료"),
+                error -> {
+                    log.error("전체 Unstage 실패", error);
+                    setStatus("Unstage 실패: " + error.getMessage());
+                }
+        );
+    }
+
+    // ========== 파일 선택 → Diff 연동 ==========
+
+    /**
+     * 파일 변경 목록에서 파일을 선택했을 때 호출된다. Step 6에서 Diff 표시 구현.
+     */
+    private void onFileSelected(FileChange file, boolean staged) {
+        // 재진입 방지: clearSelection()이 반대쪽 리스너를 트리거하여
+        // diffFileLabel을 "Diff"로 덮어쓰는 연쇄 호출 차단
+        if (updatingFileSelection) return;
+        updatingFileSelection = true;
+        try {
+            if (file == null) {
+                diffFileLabel.setText("Diff");
+                diffContent.getChildren().clear();
+                return;
+            }
+
+            log.debug("파일 선택: {} (staged={})", file.path(), staged);
+            diffFileLabel.setText(file.path());
+
+            // 다른 쪽 리스트의 선택 해제 (unstaged 선택 시 staged 해제, 반대도)
+            if (staged) {
+                unstagedListView.getSelectionModel().clearSelection();
+            } else {
+                stagedListView.getSelectionModel().clearSelection();
+            }
+
+            // Step 6에서 Diff 로드 구현
+            diffContent.getChildren().clear();
+            Label placeholder = new Label("Diff 표시 — Step 6에서 구현");
+            placeholder.getStyleClass().add("diff-line-context");
+            diffContent.getChildren().add(placeholder);
+        } finally {
+            updatingFileSelection = false;
+        }
     }
 
     // ========== 커밋 액션 ==========
