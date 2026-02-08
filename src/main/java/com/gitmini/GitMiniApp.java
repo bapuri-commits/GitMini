@@ -5,14 +5,21 @@ import com.gitmini.async.TaskManager;
 import com.gitmini.config.AppConfig;
 import com.gitmini.config.ConfigManager;
 import com.gitmini.event.EventBus;
+import com.gitmini.git.GitExecutor;
+import com.gitmini.model.GitCommandRecord;
+import com.gitmini.event.GitOperationCompletedEvent;
+import com.gitmini.service.GitService;
 import javafx.application.Application;
+import javafx.application.Platform;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.format.DateTimeFormatter;
 import java.util.Objects;
 
 /**
@@ -30,10 +37,13 @@ public class GitMiniApp extends Application {
     private ConfigManager configManager;
     private AppConfig appConfig;
     private TaskManager taskManager;
+    private GitExecutor gitExecutor;
+    private GitService gitService;
 
     // --- 앱 전역 접근자 ---
     private static TaskManager taskManagerInstance;
     private static ConfigManager configManagerInstance;
+    private static GitService gitServiceInstance;
 
     /**
      * TaskManager 인스턴스를 반환한다. Controller에서 비동기 작업 실행 시 사용.
@@ -49,6 +59,14 @@ public class GitMiniApp extends Application {
      */
     public static ConfigManager getConfigManager() {
         return configManagerInstance;
+    }
+
+    /**
+     * GitService 인스턴스를 반환한다. Controller에서 Git 작업 시 사용.
+     * 앱 시작 전 또는 Git 버전 확인 실패로 종료된 경우 null을 반환한다.
+     */
+    public static GitService getGitService() {
+        return gitServiceInstance;
     }
 
     @Override
@@ -70,6 +88,25 @@ public class GitMiniApp extends Application {
 
         // EventBus FX 스레드 안전장치 활성화
         EventBus.getInstance().enableFxThreadDispatch(true);
+
+        // Git 설치/버전 확인 — 실패 시 Alert 후 앱 종료 (Q4)
+        gitExecutor = new GitExecutor();
+        if (!gitExecutor.isGitVersionSupported()) {
+            Alert alert = new Alert(Alert.AlertType.ERROR);
+            alert.setTitle("Git 필요");
+            alert.setHeaderText("Git이 설치되어 있지 않거나 버전이 2.23.0 미만입니다.");
+            alert.setContentText("GitMini를 사용하려면 Git 2.23.0 이상이 필요합니다. 확인을 누르면 앱이 종료됩니다.");
+            alert.showAndWait();
+            Platform.exit();
+            return;
+        }
+
+        gitService = new GitService(gitExecutor);
+        gitServiceInstance = gitService;
+
+        // Command Log: 모든 git 명령 실행 시 EventBus로 발행 (Step 10 UI에서 구독)
+        gitExecutor.addCommandListener(record -> Platform.runLater(() ->
+                EventBus.getInstance().publish(toOperationEvent(record))));
 
         // FXML 로드
         FXMLLoader loader = new FXMLLoader(
@@ -127,8 +164,15 @@ public class GitMiniApp extends Application {
         // 앱 전역 참조 정리
         taskManagerInstance = null;
         configManagerInstance = null;
+        gitServiceInstance = null;
 
         log.info("GitMini 종료 완료");
+    }
+
+    private static GitOperationCompletedEvent toOperationEvent(GitCommandRecord record) {
+        String message = record.timestamp().format(DateTimeFormatter.ofPattern("HH:mm:ss"))
+                + " " + record.durationMs() + "ms";
+        return new GitOperationCompletedEvent("", record.command(), record.success(), message);
     }
 
     public static void main(String[] args) {
