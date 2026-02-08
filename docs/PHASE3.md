@@ -120,6 +120,12 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 - **토스트 효과**: 완료/에러 메시지 표시 후 **5초 뒤 자동으로 "✓ Ready"** 복원. 중간에 새 메시지가 오면 이전 타이머 무효화 (`statusFadeGeneration`).
 - **기존 `setStatus()` 호환**: 모든 기존 호출이 자동으로 로딩/완료를 구분. 코드 변경 최소화.
 
+### Step 12: 컨텍스트 메뉴 + 키보드 단축키
+
+- **Unstaged 우클릭**: "변경 취소 (Discard)" — 확인 다이얼로그 후 `gitService.discard()`, "탐색기에서 열기" — `Desktop.open(dir)`.
+- **Staged 우클릭**: "Unstage" — `onUnstage()` 호출, "탐색기에서 열기".
+- **키보드 단축키**: Ctrl+Enter(Commit), Ctrl+Shift+P(Push), Ctrl+Shift+L(Pull), Ctrl+Shift+F(Fetch).
+
 ---
 
 ## Phase 3 워크플로
@@ -135,7 +141,7 @@ Step 11~13: UX 마무리 (피드백, 단축키, 드래그드롭, 자동fetch)
 | Step | 내용 | 상태 |
 |------|------|------|
 | 11 | 상태바 + 비동기 피드백 + 토스트 | 완료 |
-| 12 | 컨텍스트 메뉴 + 키보드 단축키 | 대기 |
+| 12 | 컨텍스트 메뉴 + 키보드 단축키 | 완료 |
 | 13 | 드래그 & 드롭 + 자동 Fetch | 대기 |
 
 ---

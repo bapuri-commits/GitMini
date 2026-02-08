@@ -167,6 +167,24 @@ public class MainController {
         unstagedListView.setCellFactory(lv -> new FileChangeListCell());
         stagedListView.setCellFactory(lv -> new FileChangeListCell());
 
+        // 파일 변경 목록: 우클릭 컨텍스트 메뉴 (Unstaged)
+        ContextMenu unstagedCtxMenu = new ContextMenu();
+        MenuItem discardItem = new MenuItem("변경 취소 (Discard)");
+        discardItem.setOnAction(e -> discardSelectedFile());
+        MenuItem openInExplorerUnstaged = new MenuItem("탐색기에서 열기");
+        openInExplorerUnstaged.setOnAction(e -> openSelectedFileInExplorer(false));
+        unstagedCtxMenu.getItems().addAll(discardItem, openInExplorerUnstaged);
+        unstagedListView.setContextMenu(unstagedCtxMenu);
+
+        // 파일 변경 목록: 우클릭 컨텍스트 메뉴 (Staged)
+        ContextMenu stagedCtxMenu = new ContextMenu();
+        MenuItem unstageCtxItem = new MenuItem("Unstage");
+        unstageCtxItem.setOnAction(e -> onUnstage());
+        MenuItem openInExplorerStaged = new MenuItem("탐색기에서 열기");
+        openInExplorerStaged.setOnAction(e -> openSelectedFileInExplorer(true));
+        stagedCtxMenu.getItems().addAll(unstageCtxItem, openInExplorerStaged);
+        stagedListView.setContextMenu(stagedCtxMenu);
+
         // 파일 변경 목록: 선택 이벤트 → Diff 연동
         unstagedListView.getSelectionModel().selectedItemProperty().addListener(
                 (obs, oldFile, newFile) -> onFileSelected(newFile, false));
@@ -1276,6 +1294,78 @@ public class MainController {
                 new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN),
                 this::onCommit
         );
-        log.debug("키보드 단축키 등록: Ctrl+Enter → Commit");
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.P, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
+                this::onPush
+        );
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.L, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
+                this::onPull
+        );
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.F, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
+                this::onFetch
+        );
+        log.debug("키보드 단축키 등록: Ctrl+Enter(Commit), Ctrl+Shift+P(Push), Ctrl+Shift+L(Pull), Ctrl+Shift+F(Fetch)");
+    }
+
+    // ========== 컨텍스트 메뉴 액션 ==========
+
+    /** Unstaged 파일의 변경을 취소한다 (git checkout -- file). 확인 다이얼로그 포함. */
+    private void discardSelectedFile() {
+        FileChange selected = unstagedListView.getSelectionModel().getSelectedItem();
+        if (selected == null || selectedRepo == null) return;
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        javafx.stage.Window owner = getMainWindow();
+        if (owner != null) confirm.initOwner(owner);
+        confirm.setTitle("변경 취소");
+        confirm.setHeaderText(selected.path());
+        confirm.setContentText("이 파일의 변경 사항을 되돌리시겠습니까?\n이 작업은 되돌릴 수 없습니다.");
+
+        confirm.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                TaskManager taskManager = GitMiniApp.getTaskManager();
+                GitService gitService = GitMiniApp.getGitService();
+                if (taskManager == null || gitService == null) return;
+
+                Repository targetRepo = selectedRepo;
+                Path repoPath = Path.of(targetRepo.getPath());
+                setStatus("변경 취소 중...");
+                taskManager.run(
+                        () -> { gitService.discard(repoPath, List.of(selected.path())); return null; },
+                        result -> {
+                            refreshRepoDetailWithStatus(targetRepo, "✓ 변경 취소: " + selected.path());
+                            log.info("변경 취소 완료: {}", selected.path());
+                        },
+                        error -> {
+                            log.error("변경 취소 실패: {}", selected.path(), error);
+                            showErrorAlert("변경 취소 실패", error.getMessage());
+                            setStatus("변경 취소 실패");
+                        }
+                );
+            }
+        });
+    }
+
+    /** 선택된 파일을 OS 탐색기에서 연다. */
+    private void openSelectedFileInExplorer(boolean fromStaged) {
+        FileChange selected = fromStaged
+                ? stagedListView.getSelectionModel().getSelectedItem()
+                : unstagedListView.getSelectionModel().getSelectedItem();
+        if (selected == null || selectedRepo == null) return;
+
+        try {
+            Path filePath = Path.of(selectedRepo.getPath(), selected.path());
+            Path dir = filePath.getParent();
+            if (dir != null && java.nio.file.Files.isDirectory(dir)) {
+                java.awt.Desktop.getDesktop().open(dir.toFile());
+            } else {
+                java.awt.Desktop.getDesktop().open(Path.of(selectedRepo.getPath()).toFile());
+            }
+        } catch (Exception e) {
+            log.error("탐색기 열기 실패: {}", selected.path(), e);
+            setStatus("탐색기 열기 실패");
+        }
     }
 }
