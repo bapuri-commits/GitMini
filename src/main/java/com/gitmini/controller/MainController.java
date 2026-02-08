@@ -12,8 +12,12 @@ import com.gitmini.model.GitCommandRecord;
 import com.gitmini.model.Repository;
 import com.gitmini.service.GitService;
 import com.gitmini.service.RepositoryManager;
+import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.fxml.FXML;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyCodeCombination;
+import javafx.scene.input.KeyCombination;
 import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
@@ -144,6 +148,9 @@ public class MainController {
 
         // 초기 상태
         showWelcome();
+
+        // 키보드 단축키 등록 (Scene 생성 후 지연 실행)
+        Platform.runLater(this::setupKeyboardShortcuts);
 
         // 등록된 레포 목록 로드 (비동기)
         loadRepoList();
@@ -701,8 +708,74 @@ public class MainController {
 
     @FXML
     private void onCommit() {
-        log.info("Commit 버튼 클릭");
-        // Step 7에서 구현
-        setStatus("Commit — Step 7에서 구현 예정");
+        if (selectedRepo == null) return;
+
+        String message = commitMessageArea.getText();
+        if (message == null || message.isBlank()) {
+            showErrorAlert("커밋 실패", "커밋 메시지를 입력하세요.");
+            return;
+        }
+
+        boolean amend = amendCheckBox.isSelected();
+
+        // staged 파일이 없으면 경고 (amend인 경우 메시지만 변경 가능하므로 제외)
+        if (!amend && (stagedListView.getItems() == null || stagedListView.getItems().isEmpty())) {
+            showErrorAlert("커밋 실패", "스테이징된 파일이 없습니다.\n먼저 파일을 Stage하세요.");
+            return;
+        }
+        log.info("Commit 실행: amend={}, message={}", amend, message.lines().findFirst().orElse(""));
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+
+        setStatus("커밋 중...");
+        commitBtn.setDisable(true);
+
+        taskManager.run(
+                () -> {
+                    if (amend) {
+                        gitService.amend(repoPath, message);
+                    } else {
+                        gitService.commit(repoPath, message);
+                    }
+                    return null;
+                },
+                result -> {
+                    commitBtn.setDisable(false);
+                    commitMessageArea.clear();
+                    amendCheckBox.setSelected(false);
+                    refreshRepoDetailWithStatus(targetRepo,
+                            amend ? "✓ Amend 완료" : "✓ 커밋 완료");
+                    log.info("커밋 완료: {}", targetRepo.getName());
+                },
+                error -> {
+                    commitBtn.setDisable(false);
+                    log.error("커밋 실패: {}", targetRepo.getName(), error);
+                    showErrorAlert("커밋 실패", error.getMessage());
+                    setStatus("커밋 실패");
+                }
+        );
+    }
+
+    // ========== 키보드 단축키 ==========
+
+    /**
+     * Scene에 키보드 단축키를 등록한다.
+     * MainController 외부에서 Scene이 생성된 후 호출해야 한다.
+     * 현재는 initialize()에서 Platform.runLater로 지연 등록한다.
+     */
+    private void setupKeyboardShortcuts() {
+        var scene = sidebar.getScene();
+        if (scene == null) return;
+
+        scene.getAccelerators().put(
+                new KeyCodeCombination(KeyCode.ENTER, KeyCombination.CONTROL_DOWN),
+                this::onCommit
+        );
+        log.debug("키보드 단축키 등록: Ctrl+Enter → Commit");
     }
 }
