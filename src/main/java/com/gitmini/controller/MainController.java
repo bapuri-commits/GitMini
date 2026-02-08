@@ -169,20 +169,26 @@ public class MainController {
 
         // 파일 변경 목록: 우클릭 컨텍스트 메뉴 (Unstaged)
         ContextMenu unstagedCtxMenu = new ContextMenu();
+        MenuItem stageCtxItem = new MenuItem("Stage");
+        stageCtxItem.setOnAction(e -> onStage());
         MenuItem discardItem = new MenuItem("변경 취소 (Discard)");
         discardItem.setOnAction(e -> discardSelectedFile());
+        MenuItem copyPathUnstaged = new MenuItem("경로 복사");
+        copyPathUnstaged.setOnAction(e -> copySelectedFilePath(false));
         MenuItem openInExplorerUnstaged = new MenuItem("탐색기에서 열기");
         openInExplorerUnstaged.setOnAction(e -> openSelectedFileInExplorer(false));
-        unstagedCtxMenu.getItems().addAll(discardItem, openInExplorerUnstaged);
+        unstagedCtxMenu.getItems().addAll(stageCtxItem, discardItem, new SeparatorMenuItem(), copyPathUnstaged, openInExplorerUnstaged);
         unstagedListView.setContextMenu(unstagedCtxMenu);
 
         // 파일 변경 목록: 우클릭 컨텍스트 메뉴 (Staged)
         ContextMenu stagedCtxMenu = new ContextMenu();
         MenuItem unstageCtxItem = new MenuItem("Unstage");
         unstageCtxItem.setOnAction(e -> onUnstage());
+        MenuItem copyPathStaged = new MenuItem("경로 복사");
+        copyPathStaged.setOnAction(e -> copySelectedFilePath(true));
         MenuItem openInExplorerStaged = new MenuItem("탐색기에서 열기");
         openInExplorerStaged.setOnAction(e -> openSelectedFileInExplorer(true));
-        stagedCtxMenu.getItems().addAll(unstageCtxItem, openInExplorerStaged);
+        stagedCtxMenu.getItems().addAll(unstageCtxItem, new SeparatorMenuItem(), copyPathStaged, openInExplorerStaged);
         stagedListView.setContextMenu(stagedCtxMenu);
 
         // 파일 변경 목록: 선택 이벤트 → Diff 연동
@@ -1346,6 +1352,22 @@ public class MainController {
                 );
             }
         });
+    }
+
+    /** 선택된 파일의 경로를 클립보드에 복사한다. */
+    private void copySelectedFilePath(boolean fromStaged) {
+        FileChange selected = fromStaged
+                ? stagedListView.getSelectionModel().getSelectedItem()
+                : unstagedListView.getSelectionModel().getSelectedItem();
+        if (selected == null) return;
+
+        String fullPath = selectedRepo != null
+                ? Path.of(selectedRepo.getPath(), selected.path()).toString()
+                : selected.path();
+        javafx.scene.input.ClipboardContent cc = new javafx.scene.input.ClipboardContent();
+        cc.putString(fullPath);
+        javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
+        setStatus("경로 복사됨: " + selected.path());
     }
 
     /** 선택된 파일을 OS 탐색기에서 연다. */
