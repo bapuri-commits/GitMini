@@ -9,6 +9,8 @@ import com.gitmini.event.EventBus;
 import com.gitmini.git.GitExecutor;
 import com.gitmini.model.GitCommandRecord;
 import com.gitmini.event.GitOperationCompletedEvent;
+import com.gitmini.config.TokenManager;
+import com.gitmini.service.GitHubService;
 import com.gitmini.service.GitService;
 import com.gitmini.service.RepositoryManager;
 import javafx.application.Application;
@@ -43,6 +45,7 @@ public class GitMiniApp extends Application {
     private TaskManager taskManager;
     private GitExecutor gitExecutor;
     private GitService gitService;
+    private GitHubService gitHubService;
     private RepositoryManager repositoryManager;
     private com.gitmini.controller.MainController mainController;
 
@@ -50,6 +53,7 @@ public class GitMiniApp extends Application {
     private static TaskManager taskManagerInstance;
     private static ConfigManager configManagerInstance;
     private static GitService gitServiceInstance;
+    private static GitHubService gitHubServiceInstance;
     private static RepositoryManager repositoryManagerInstance;
 
     /**
@@ -74,6 +78,14 @@ public class GitMiniApp extends Application {
      */
     public static GitService getGitService() {
         return gitServiceInstance;
+    }
+
+    /**
+     * GitHubService 인스턴스를 반환한다. Controller에서 GitHub API 호출 시 사용.
+     * 앱 시작 전에는 null을 반환한다.
+     */
+    public static GitHubService getGitHubService() {
+        return gitHubServiceInstance;
     }
 
     /**
@@ -122,6 +134,11 @@ public class GitMiniApp extends Application {
         // RepositoryManager 생성
         repositoryManager = new RepositoryManager(configManager, gitService);
         repositoryManagerInstance = repositoryManager;
+
+        // GitHubService 생성 (GitHub REST API 클라이언트)
+        TokenManager tokenManager = new TokenManager(configManager.getConfigDir());
+        gitHubService = new GitHubService(tokenManager);
+        gitHubServiceInstance = gitHubService;
 
         // Command Log: 모든 git 명령 실행 시 EventBus로 발행 (Step 10 UI에서 구독)
         gitExecutor.addCommandListener(record -> Platform.runLater(() -> {
@@ -209,6 +226,7 @@ public class GitMiniApp extends Application {
 
         // 앱 전역 참조 정리
         repositoryManagerInstance = null;
+        gitHubServiceInstance = null;
         gitServiceInstance = null;
         taskManagerInstance = null;
         configManagerInstance = null;

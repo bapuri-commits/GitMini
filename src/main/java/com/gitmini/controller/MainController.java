@@ -23,13 +23,19 @@ import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.StackPane;
 import javafx.scene.layout.VBox;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.stage.DirectoryChooser;
+import javafx.stage.Modality;
+import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * 메인 화면 컨트롤러.
@@ -614,8 +620,68 @@ public class MainController {
     @FXML
     private void onCloneRepo() {
         log.info("Clone 버튼 클릭");
-        // Phase 4에서 구현
-        setStatus("Clone — Phase 4에서 구현 예정");
+        // Step 3에서 구현
+        setStatus("Clone — Step 3에서 구현 예정");
+    }
+
+    /**
+     * 설정 다이얼로그를 모달로 연다.
+     * 저장 후 자동 Fetch 타이머를 갱신한다.
+     */
+    @FXML
+    private void onSettings() {
+        log.info("설정 버튼 클릭");
+        try {
+            FXMLLoader loader = new FXMLLoader(
+                    Objects.requireNonNull(getClass().getResource("/fxml/settings.fxml"),
+                            "settings.fxml을 찾을 수 없습니다"));
+            Parent root = loader.load();
+            SettingsController settingsController = loader.getController();
+
+            Stage dialog = new Stage();
+            dialog.setTitle("설정");
+            dialog.initModality(Modality.APPLICATION_MODAL);
+            javafx.stage.Window owner = getMainWindow();
+            if (owner != null) dialog.initOwner(owner);
+
+            Scene scene = new Scene(root);
+            // 메인 앱과 동일한 CSS 적용
+            scene.getStylesheets().add(
+                    Objects.requireNonNull(getClass().getResource("/css/app.css"),
+                            "app.css를 찾을 수 없습니다").toExternalForm());
+            dialog.setScene(scene);
+            dialog.setResizable(false);
+
+            // 메인 창 중앙에 배치 (Windows에서 initOwner만으로는 중앙 배치 안 됨)
+            if (owner != null) {
+                dialog.setOnShown(e -> {
+                    dialog.setX(owner.getX() + (owner.getWidth() - dialog.getWidth()) / 2);
+                    dialog.setY(owner.getY() + (owner.getHeight() - dialog.getHeight()) / 2);
+                });
+            }
+
+            dialog.showAndWait();
+
+            // 저장된 경우 자동 Fetch 타이머 갱신
+            if (settingsController.isSaved()) {
+                restartAutoFetch();
+                setStatus("✓ 설정 저장 완료");
+            }
+        } catch (Exception e) {
+            log.error("설정 다이얼로그 열기 실패", e);
+            showErrorAlert("설정 열기 실패", e.getMessage());
+        }
+    }
+
+    /**
+     * 자동 Fetch 타이머를 중지하고 현재 설정값으로 재시작한다.
+     * 설정 저장 후 호출된다.
+     */
+    private void restartAutoFetch() {
+        if (autoFetchTimeline != null) {
+            autoFetchTimeline.stop();
+        }
+        startAutoFetch();
     }
 
     // ========== 사이드바: 레포 제거 ==========

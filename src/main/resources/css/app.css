@@ -247,3 +247,27 @@
 .status-bar .progress-indicator {
     -fx-padding: 0;
 }
+
+/* ================================================================ */
+/* 설정 다이얼로그                                                    */
+/* ================================================================ */
+
+.settings-section {
+    /* 패딩은 FXML에서 섹션별로 다르게 설정 (top 16/12) */
+}
+
+.settings-section-title {
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-padding: 0 0 4 0;
+}
+
+.settings-hint {
+    -fx-font-size: 11px;
+    -fx-text-fill: -color-fg-subtle;
+    -fx-padding: 4 0 0 0;
+}
+
+.token-status {
+    -fx-font-size: 12px;
+}

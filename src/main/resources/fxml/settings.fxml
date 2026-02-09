@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.control.Button?>
+<?import javafx.scene.control.ComboBox?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.PasswordField?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.TextField?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.VBox?>
+
+<VBox xmlns="http://javafx.com/javafx/21"
+      xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="com.gitmini.controller.SettingsController"
+      spacing="0" prefWidth="480">
+
+    <!-- ── 일반 섹션 ── -->
+    <VBox styleClass="settings-section" spacing="10">
+        <padding><Insets top="16" right="20" bottom="12" left="20"/></padding>
+
+        <Label text="일반" styleClass="settings-section-title"/>
+
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="자동 Fetch 주기:" prefWidth="140"/>
+            <ComboBox fx:id="autoFetchComboBox" prefWidth="120"/>
+        </HBox>
+
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="기본 Clone 경로:" prefWidth="140"/>
+            <TextField fx:id="defaultClonePathField" HBox.hgrow="ALWAYS"
+                       promptText="Clone 시 기본 경로"/>
+            <Button text="..." onAction="#onBrowseClonePath"
+                    mnemonicParsing="false" prefWidth="36"/>
+        </HBox>
+    </VBox>
+
+    <Separator/>
+
+    <!-- ── GitHub 섹션 ── -->
+    <VBox styleClass="settings-section" spacing="10">
+        <padding><Insets top="12" right="20" bottom="12" left="20"/></padding>
+
+        <Label text="GitHub" styleClass="settings-section-title"/>
+
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="Personal Access Token:" prefWidth="140"/>
+            <PasswordField fx:id="tokenField" HBox.hgrow="ALWAYS"
+                           promptText="ghp_xxxxxxxxxxxx"/>
+        </HBox>
+
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Button fx:id="tokenTestBtn" text="토큰 테스트"
+                    onAction="#onTokenTest" mnemonicParsing="false"/>
+            <Button fx:id="tokenDeleteBtn" text="토큰 삭제"
+                    onAction="#onTokenDelete" mnemonicParsing="false"/>
+            <Pane HBox.hgrow="ALWAYS"/>
+            <Label fx:id="tokenStatusLabel" text="" styleClass="token-status"/>
+        </HBox>
+
+        <Label fx:id="tokenHintLabel"
+               text="GitHub → Settings → Developer settings → Personal access tokens → Generate new token (classic)&#10;필요 권한: repo (private 레포 접근 + Clone)"
+               styleClass="settings-hint" wrapText="true"/>
+    </VBox>
+
+    <Separator/>
+
+    <!-- ── 하단 버튼 ── -->
+    <HBox alignment="CENTER_RIGHT" spacing="10">
+        <padding><Insets top="12" right="20" bottom="16" left="20"/></padding>
+        <Pane HBox.hgrow="ALWAYS"/>
+        <Button fx:id="cancelBtn" text="취소" onAction="#onCancel"
+                mnemonicParsing="false"/>
+        <Button fx:id="saveBtn" text="저장" onAction="#onSave"
+                styleClass="accent" mnemonicParsing="false"/>
+    </HBox>
+
+</VBox>

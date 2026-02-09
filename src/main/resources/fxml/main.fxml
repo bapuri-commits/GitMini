@@ -33,7 +33,14 @@
             <!-- ================================================================ -->
             <VBox fx:id="sidebar" styleClass="sidebar" minWidth="200" maxWidth="400">
 
-                <Label text="레포지토리" styleClass="sidebar-header"/>
+                <HBox alignment="CENTER_LEFT">
+                    <Label text="레포지토리" styleClass="sidebar-header" HBox.hgrow="ALWAYS"/>
+                    <Pane HBox.hgrow="ALWAYS"/>
+                    <Button fx:id="settingsBtn" text="⚙" onAction="#onSettings"
+                            styleClass="small-btn" mnemonicParsing="false">
+                        <HBox.margin><Insets top="4" right="8" bottom="0" left="0"/></HBox.margin>
+                    </Button>
+                </HBox>
 
                 <ListView fx:id="repoListView" VBox.vgrow="ALWAYS"/>
 
