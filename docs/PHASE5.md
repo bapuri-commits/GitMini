@@ -1,7 +1,8 @@
 # Phase 5: 완성도
 
-> **상태**: 계획 수립 (Step 분해 완료)  
+> **상태**: 완료  
 > **이전 Phase**: Phase 4 완료, 191개 테스트 PASSED  
+> **현재 테스트**: 225개 PASSED  
 > **기준 문서**: DESIGN.md §Phase 5
 
 ---
@@ -136,14 +137,38 @@ Step 5: jpackage 빌드
 
 ### Step 4: 창 상태 저장 검증
 
-*(미진행)*
+- 코드 확인: `GitMiniApp.stop()` → 디스크 최신 config 로드 후 창 크기/위치만 갱신 저장 (다른 모듈 데이터 보존).
+- 코드 확인: `GitMiniApp.start()` → `Scene` 생성 시 `windowWidth/Height` 사용, `windowX/Y >= 0`이면 위치 복원.
+- 사용자 검증: 창 줄이기/이동 후 재시작 → 복원 확인. 최대화 종료 → 전체 크기로 재시작 확인.
 
 ### Step 5: jpackage 빌드
 
-*(미진행)*
+- `build.gradle.kts`: `jpackageImage` 태스크 추가.
+  - `installDist` 의존 → `build/install/GitMini/lib/` 전체 JAR을 `--input`으로 전달.
+  - `--type app-image` → 포터블 디렉토리 (설치 프로그램 없이 바로 실행 가능).
+  - `--main-jar`, `--main-class`, `--name`, `--app-version`, `--vendor`, `--description`.
+  - `--java-options --add-opens` (JavaFX non-modular 호환).
+  - 아이콘 파일(`src/main/resources/icons/gitmini.ico`)이 있으면 자동 적용.
+  - 버전 문자열에서 SNAPSHOT 등 비숫자 제거 (jpackage 요구사항).
+- **검증**: `gradlew jpackageImage` → `build/jpackage/GitMini/GitMini.exe` 생성 확인.
+  - 출력: `GitMini.exe` (437KB) + `app/` (JAR들) + `runtime/` (JRE 내장).
+
+### 후속 수정
+
+- **터미널 열기 버그**: ProcessBuilder → Runtime.exec 교체 (사이드바 터미널 열기 안 되는 문제).
+- **Windows Terminal PATH**: `wt` 직접 호출 → `cmd /c start wt` 경유 (Store 앱 PATH 이슈).
 
 ---
 
 ## 3. 종료
 
-*(Phase 5 완료 시 작성)*
+**Phase 5 완료.** 2026-02-09.
+
+- **검증**: `gradlew build` 225개 PASSED. `gradlew jpackageImage` → `GitMini.exe` 생성 성공.
+- **완료 요약**: Step 1~5 + 후속 수정 2건.
+  - Step 1: 에러 핸들링 강화 (ErrorMessages 유틸리티 31개 테스트) + 테마 토글 + Clone 경로 검증
+  - Step 2+3: 외부 터미널 설정 + 터미널에서 열기 (파일/레포) + Undo 최근 커밋 (soft reset)
+  - Step 4: 창 상태 저장/복원 검증
+  - Step 5: jpackage 포터블 .exe 빌드
+- **총 테스트**: 225개 PASSED.
+- **결과물**: 상용 수준 완성. 배포 가능.
