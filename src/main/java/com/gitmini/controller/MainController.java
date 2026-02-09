@@ -59,6 +59,8 @@ public class MainController {
     private static final int MAX_FILE_LIST_SIZE = 1000;
     /** 커밋 히스토리 목록에 표시할 최대 커밋 수. */
     private static final int COMMIT_HISTORY_MAX = 50;
+    /** 커밋 메시지 히스토리에 저장할 최대 개수. */
+    private static final int MAX_COMMIT_MSG_HISTORY = 20;
 
     // ========== FXML 바인딩: 사이드바 ==========
 
@@ -107,6 +109,7 @@ public class MainController {
     @FXML private VBox commitArea;
     @FXML private TextArea commitMessageArea;
     @FXML private CheckBox amendCheckBox;
+    @FXML private MenuButton commitMsgHistoryBtn;
     @FXML private Button commitBtn;
 
     // ========== FXML 바인딩: 커밋 히스토리 ==========
@@ -341,6 +344,9 @@ public class MainController {
             event.setDropCompleted(true);
             event.consume();
         });
+
+        // 커밋 메시지 히스토리 드롭다운 초기화
+        setupCommitMsgHistory();
 
         // 초기 상태
         showWelcome();
@@ -1776,6 +1782,7 @@ public class MainController {
                 },
                 result -> {
                     commitBtn.setDisable(false);
+                    saveCommitMessageToHistory(message);
                     commitMessageArea.clear();
                     amendCheckBox.setSelected(false);
                     refreshRepoDetailWithStatus(targetRepo,
@@ -1789,6 +1796,153 @@ public class MainController {
                     setStatus("커밋 실패");
                 }
         );
+    }
+
+    // ========== 커밋 메시지 히스토리 ==========
+
+    /**
+     * 커밋 메시지 히스토리 드롭다운을 초기화한다.
+     * 메뉴가 열릴 때마다 최신 히스토리를 로드하여 표시한다.
+     */
+    private void setupCommitMsgHistory() {
+        if (commitMsgHistoryBtn == null) return;
+        // 메뉴가 열릴 때마다 최신 히스토리로 갱신
+        commitMsgHistoryBtn.showingProperty().addListener((obs, wasShowing, isShowing) -> {
+            if (isShowing) {
+                updateCommitMsgHistoryMenu();
+            }
+        });
+        // 초기 메뉴 아이템 세팅
+        updateCommitMsgHistoryMenu();
+    }
+
+    /**
+     * 선택된 레포의 커밋 메시지 히스토리 키를 반환한다.
+     * 레포 미선택 시 null.
+     */
+    private String getRepoHistoryKey() {
+        return selectedRepo != null ? selectedRepo.getPath() : null;
+    }
+
+    /**
+     * 커밋 메시지 히스토리 메뉴 아이템을 갱신한다.
+     * 선택된 레포의 최근 메시지 목록을 로드하여 MenuButton에 표시.
+     */
+    private void updateCommitMsgHistoryMenu() {
+        if (commitMsgHistoryBtn == null) return;
+        commitMsgHistoryBtn.getItems().clear();
+
+        String repoKey = getRepoHistoryKey();
+        com.gitmini.config.ConfigManager configManager = GitMiniApp.getConfigManager();
+        if (configManager == null || repoKey == null) {
+            MenuItem emptyItem = new MenuItem("(히스토리 없음)");
+            emptyItem.setDisable(true);
+            commitMsgHistoryBtn.getItems().add(emptyItem);
+            return;
+        }
+
+        com.gitmini.config.AppConfig config = configManager.load();
+        List<String> history = config.getCommitMessageHistory().getOrDefault(repoKey, List.of());
+
+        if (history.isEmpty()) {
+            MenuItem emptyItem = new MenuItem("(히스토리 없음)");
+            emptyItem.setDisable(true);
+            commitMsgHistoryBtn.getItems().add(emptyItem);
+        } else {
+            for (String msg : history) {
+                // 표시용: 첫 줄만, 60자 초과 시 축약
+                String firstLine = msg.lines().findFirst().orElse(msg);
+                String display = firstLine.length() > 60
+                        ? firstLine.substring(0, 57) + "..."
+                        : firstLine;
+                MenuItem item = new MenuItem(display);
+                item.setOnAction(e -> commitMessageArea.setText(msg));
+                commitMsgHistoryBtn.getItems().add(item);
+            }
+            // 구분선 + 지우기 옵션
+            commitMsgHistoryBtn.getItems().add(new SeparatorMenuItem());
+            MenuItem clearItem = new MenuItem("히스토리 지우기");
+            clearItem.setOnAction(e -> clearCommitMessageHistory());
+            commitMsgHistoryBtn.getItems().add(clearItem);
+        }
+    }
+
+    /**
+     * 커밋 성공 후 메시지를 선택된 레포의 히스토리에 저장한다.
+     * 중복이면 맨 앞으로 이동, 최대 {@value MAX_COMMIT_MSG_HISTORY}개 유지.
+     */
+    private void saveCommitMessageToHistory(String message) {
+        String repoKey = getRepoHistoryKey();
+        com.gitmini.config.ConfigManager configManager = GitMiniApp.getConfigManager();
+        if (configManager == null || repoKey == null || message == null || message.isBlank()) return;
+
+        try {
+            String trimmed = message.strip();
+            if (trimmed.isEmpty()) return;
+
+            com.gitmini.config.AppConfig config = configManager.load();
+            java.util.Map<String, List<String>> historyMap = config.getCommitMessageHistory();
+            List<String> history = new java.util.ArrayList<>(historyMap.getOrDefault(repoKey, List.of()));
+            // 중복 제거 후 맨 앞에 추가
+            history.remove(trimmed);
+            history.add(0, trimmed);
+            // 최대 개수 유지
+            while (history.size() > MAX_COMMIT_MSG_HISTORY) {
+                history.remove(history.size() - 1);
+            }
+            historyMap.put(repoKey, history);
+            configManager.save(config);
+            log.debug("커밋 메시지 히스토리 저장 ({}): {}개", selectedRepo.getName(), history.size());
+        } catch (Exception e) {
+            log.warn("커밋 메시지 히스토리 저장 실패", e);
+        }
+    }
+
+    /**
+     * 커밋 메시지를 선택된 레포의 히스토리에서 제거한다 (커밋 취소 시 사용).
+     */
+    private void removeCommitMessageFromHistory(String message) {
+        String repoKey = getRepoHistoryKey();
+        com.gitmini.config.ConfigManager configManager = GitMiniApp.getConfigManager();
+        if (configManager == null || repoKey == null || message == null || message.isBlank()) return;
+
+        try {
+            String trimmed = message.strip();
+            if (trimmed.isEmpty()) return;
+
+            com.gitmini.config.AppConfig config = configManager.load();
+            java.util.Map<String, List<String>> historyMap = config.getCommitMessageHistory();
+            List<String> history = new java.util.ArrayList<>(historyMap.getOrDefault(repoKey, List.of()));
+            if (history.remove(trimmed)) {
+                if (history.isEmpty()) {
+                    historyMap.remove(repoKey);
+                } else {
+                    historyMap.put(repoKey, history);
+                }
+                configManager.save(config);
+                log.debug("커밋 메시지 히스토리에서 제거: {}", trimmed.lines().findFirst().orElse(""));
+            }
+        } catch (Exception e) {
+            log.warn("커밋 메시지 히스토리 제거 실패", e);
+        }
+    }
+
+    /**
+     * 선택된 레포의 커밋 메시지 히스토리를 전부 삭제한다.
+     */
+    private void clearCommitMessageHistory() {
+        String repoKey = getRepoHistoryKey();
+        com.gitmini.config.ConfigManager configManager = GitMiniApp.getConfigManager();
+        if (configManager == null || repoKey == null) return;
+
+        try {
+            com.gitmini.config.AppConfig config = configManager.load();
+            config.getCommitMessageHistory().remove(repoKey);
+            configManager.save(config);
+            log.info("커밋 메시지 히스토리 초기화: {}", selectedRepo != null ? selectedRepo.getName() : repoKey);
+        } catch (Exception e) {
+            log.warn("커밋 메시지 히스토리 초기화 실패", e);
+        }
     }
 
     // ========== Undo 최근 커밋 ==========
@@ -1824,11 +1978,17 @@ public class MainController {
                 if (taskManager == null || gitService == null) return;
 
                 Repository targetRepo = selectedRepo;
+                String undoneMessage = latestCommit != null ? latestCommit.message() : null;
                 Path repoPath = Path.of(targetRepo.getPath());
                 setStatus("커밋 취소 중...");
                 taskManager.run(
                         () -> { gitService.resetSoft(repoPath); return null; },
                         result -> {
+                            // 취소된 커밋 메시지를 히스토리에서 제거하고 입력란에 복원
+                            if (undoneMessage != null && !undoneMessage.isBlank()) {
+                                removeCommitMessageFromHistory(undoneMessage);
+                                commitMessageArea.setText(undoneMessage);
+                            }
                             refreshRepoDetailWithStatus(targetRepo, "✓ 최근 커밋 취소 완료");
                             log.info("최근 커밋 취소 완료: {}", targetRepo.getName());
                         },

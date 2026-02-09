@@ -1,7 +1,9 @@
 package com.gitmini.config;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 앱 설정 모델.
@@ -19,6 +21,8 @@ public class AppConfig {
     private double windowY;
     private String defaultClonePath;
     private String externalTerminal;
+    /** 레포별 커밋 메시지 히스토리. key = 레포 경로, value = 최근 메시지 목록 (최신 우선). */
+    private Map<String, List<String>> commitMessageHistory;
 
     /**
      * 기본값으로 초기화. Gson 역직렬화 시에도 사용된다.
@@ -33,6 +37,7 @@ public class AppConfig {
         this.windowY = -1;
         this.defaultClonePath = "";
         this.externalTerminal = "cmd";
+        this.commitMessageHistory = new LinkedHashMap<>();
     }
 
     /**
@@ -45,6 +50,7 @@ public class AppConfig {
         if (theme == null) theme = "primer-dark";
         if (defaultClonePath == null) defaultClonePath = "";
         if (externalTerminal == null) externalTerminal = "cmd";
+        if (commitMessageHistory == null) commitMessageHistory = new LinkedHashMap<>();
         if (autoFetchIntervalMinutes <= 0) autoFetchIntervalMinutes = 5;
         if (windowWidth <= 0 || Double.isNaN(windowWidth)) windowWidth = 1200;
         if (windowHeight <= 0 || Double.isNaN(windowHeight)) windowHeight = 800;
@@ -124,5 +130,13 @@ public class AppConfig {
 
     public void setExternalTerminal(String externalTerminal) {
         this.externalTerminal = externalTerminal;
+    }
+
+    public Map<String, List<String>> getCommitMessageHistory() {
+        return commitMessageHistory;
+    }
+
+    public void setCommitMessageHistory(Map<String, List<String>> commitMessageHistory) {
+        this.commitMessageHistory = commitMessageHistory != null ? commitMessageHistory : new LinkedHashMap<>();
     }
 }

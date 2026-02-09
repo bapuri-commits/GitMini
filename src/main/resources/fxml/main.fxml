@@ -7,6 +7,7 @@
 <?import javafx.scene.control.ComboBox?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.control.ListView?>
+<?import javafx.scene.control.MenuButton?>
 <?import javafx.scene.control.ProgressIndicator?>
 <?import javafx.scene.control.ScrollPane?>
 <?import javafx.scene.control.Separator?>
@@ -149,6 +150,8 @@
                                   prefRowCount="3" wrapText="true"/>
                         <HBox alignment="CENTER_LEFT" spacing="8">
                             <CheckBox fx:id="amendCheckBox" text="Amend"/>
+                            <MenuButton fx:id="commitMsgHistoryBtn" text="최근 메시지 ▾"
+                                        mnemonicParsing="false" styleClass="flat"/>
                             <Pane HBox.hgrow="ALWAYS"/>
                             <Button fx:id="commitBtn" text="Commit" onAction="#onCommit"
                                     styleClass="accent" mnemonicParsing="false"/>
