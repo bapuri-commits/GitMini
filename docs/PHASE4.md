@@ -70,10 +70,15 @@ Step 4: (선택) 레포 생성 + Phase 4 마무리
 - `parseRepo()`: 단일 레포 JSON 파싱 (createRepository 응답용).
 - 레포 생성 다이얼로그 (MainController): 이름, 설명, Private/Public, README 초기화 옵션, 생성 진행률.
 - 생성 완료 → Clone 제안 다이얼로그 → 확인 시 자동 Clone (`autoCloneNewRepo`).
-- 토큰 미설정 시 "설정에서 토큰을 등록하세요" 에러 표시.
+- 토큰 미설정 시 에러 다이얼로그 (⚙ 경로 안내 포함).
 - `main.fxml` 사이드바에 "새 레포" 버튼 추가.
 - 4개 단위 테스트 (createRepository 성공/이름빈값/토큰없음/422 이름중복).
-- `docs/PHASE4.md` 최종 기록.
+
+### 후속 버그 수정 (사용자 검증 중 발견)
+
+- **parseRepo IllegalStateException 미포착**: `parseRepoList`와 동일 패턴 누락 → catch에 `IllegalStateException` 추가.
+- **토큰 삭제 즉시 반영 버그**: "삭제" 클릭 시 디스크에서 바로 삭제 → "취소"해도 복원 불가. `tokenDeletePending` 플래그 도입, "저장" 시에만 실제 삭제.
+- **토큰 미설정 에러 메시지 잘림**: header/content 분리 + 줄바꿈 + ⚙ 경로 안내 추가.
 
 ---
 
@@ -81,12 +86,12 @@ Step 4: (선택) 레포 생성 + Phase 4 마무리
 
 **Phase 4 완료.** 2026-02-09.
 
-- **검증**: `gradlew build` / `gradlew test` 191개 PASSED.
-- **완료 요약**: 4개 Step 전부 구현·검증.
-  - GitHubService (HttpClient 기반 REST API 클라이언트)
-  - 설정 다이얼로그 (PAT 입력/저장/테스트/삭제, 자동 Fetch 주기, 기본 Clone 경로)
+- **검증**: `gradlew build` / `gradlew test` 191개 PASSED. 사용자 수동 검증 전수 통과.
+- **완료 요약**: 4개 Step + 후속 수정 3건.
+  - GitHubService (HttpClient 기반 REST API 클라이언트 — validateToken, listRepositories, createRepository)
+  - 설정 다이얼로그 (PAT 입력/저장/테스트/삭제(지연), 자동 Fetch 주기, 기본 Clone 경로)
   - Clone (URL + 경로 → git clone, PAT 자동 삽입, 진행률, 에러 피드백, 자동 레포 추가)
   - 레포 생성 (GitHub API → 자동 Clone 제안)
   - 단축키 툴팁 (Commit, Push, Pull, Fetch)
-- **추가 구현**: 토큰 URL 마스킹(로그 보안), 에러 메시지 80자 축약, 다이얼로그 중앙 배치, Clone 버튼 바인딩 버그 수정.
+- **추가 구현**: 토큰 URL 마스킹(로그 보안), 에러 메시지 80자 축약, 다이얼로그 중앙 배치, Clone 버튼 바인딩 버그 수정, 토큰 삭제 지연(취소 안전).
 - **다음 Phase**: Phase 5 (완성도) — 에러 핸들링 강화, 설정 화면 완성, Undo, 창 상태 저장, jpackage 빌드.
