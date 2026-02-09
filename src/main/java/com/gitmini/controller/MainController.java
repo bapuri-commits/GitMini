@@ -2020,6 +2020,9 @@ public class MainController {
     /**
      * 지정된 디렉토리에서 설정된 외부 터미널을 연다.
      * 설정의 externalTerminal 값에 따라 cmd/powershell/wt를 실행한다.
+     * <p>
+     * 작업 디렉토리는 Runtime.exec의 File 매개변수로 직접 지정한다 (가장 안정적).
+     * </p>
      */
     private void openTerminalAt(String directory) {
         try {
@@ -2030,22 +2033,24 @@ public class MainController {
                 if (terminal == null || terminal.isBlank()) terminal = "cmd";
             }
 
-            ProcessBuilder pb;
+            File workDir = new File(directory);
             switch (terminal.toLowerCase()) {
                 case "powershell":
-                    pb = new ProcessBuilder("powershell", "-NoExit", "-Command",
-                            "Set-Location '" + directory + "'");
+                    Runtime.getRuntime().exec(
+                            new String[]{"cmd", "/c", "start", "powershell", "-NoExit"},
+                            null, workDir);
                     break;
                 case "wt":
-                    pb = new ProcessBuilder("wt", "-d", directory);
+                    Runtime.getRuntime().exec(
+                            new String[]{"wt", "-d", directory},
+                            null, workDir);
                     break;
                 default: // cmd
-                    pb = new ProcessBuilder("cmd", "/c", "start", "cmd", "/k",
-                            "cd /d " + directory);
+                    Runtime.getRuntime().exec(
+                            new String[]{"cmd", "/c", "start", "cmd"},
+                            null, workDir);
                     break;
             }
-            pb.directory(new File(directory));
-            pb.start();
             setStatus("터미널 열기: " + directory);
             log.info("터미널 열기: {} ({})", directory, terminal);
         } catch (Exception e) {
