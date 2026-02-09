@@ -627,7 +627,9 @@ public class MainController {
 
         com.gitmini.service.GitHubService ghService = GitMiniApp.getGitHubService();
         if (ghService == null || !ghService.hasToken()) {
-            showErrorAlert("토큰 필요", "GitHub 레포를 생성하려면 먼저 설정에서 토큰을 등록하세요.");
+            showErrorAlert("GitHub 토큰이 필요합니다",
+                    "레포를 생성하려면 GitHub Personal Access Token이 필요합니다.\n\n"
+                    + "사이드바 상단 ⚙ 버튼 → 설정 → GitHub 섹션에서 토큰을 등록하세요.");
             return;
         }
 
