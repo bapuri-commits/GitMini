@@ -61,6 +61,15 @@ public class MainController {
     private static final int COMMIT_HISTORY_MAX = 50;
     /** 커밋 메시지 히스토리에 저장할 최대 개수. */
     private static final int MAX_COMMIT_MSG_HISTORY = 20;
+    /** Command Log에 유지할 최대 항목 수. */
+    private static final int MAX_COMMAND_LOG_SIZE = 500;
+    /** 상태바 토스트 메시지가 자동 복원되기까지의 초. */
+    private static final int STATUS_FADE_SECONDS = 5;
+    /** 기본 상태바 메시지. */
+    private static final String STATUS_READY = "✓ Ready";
+    /** Command Log 시간 포맷. */
+    private static final java.time.format.DateTimeFormatter CMD_TIME_FORMAT =
+            java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
 
     // ========== FXML 바인딩: 사이드바 ==========
 
@@ -252,7 +261,7 @@ public class MainController {
         commitHistoryListView.setContextMenu(commitHistoryCtxMenu);
 
         // Command Log: CellFactory — 시각, 성공/실패, 명령어, 소요시간 표시
-        java.time.format.DateTimeFormatter cmdTimeFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
+        java.time.format.DateTimeFormatter cmdTimeFormat = CMD_TIME_FORMAT;
         commandLogListView.setCellFactory(lv -> new ListCell<>() {
             @Override
             protected void updateItem(GitCommandRecord item, boolean empty) {
@@ -297,8 +306,8 @@ public class MainController {
         commandLogEventHandler = record -> {
             commandLogListView.getItems().add(0, record);
             // 최대 500건 유지
-            if (commandLogListView.getItems().size() > 500) {
-                commandLogListView.getItems().remove(500, commandLogListView.getItems().size());
+            if (commandLogListView.getItems().size() > MAX_COMMAND_LOG_SIZE) {
+                commandLogListView.getItems().remove(MAX_COMMAND_LOG_SIZE, commandLogListView.getItems().size());
             }
         };
         com.gitmini.event.EventBus.getInstance().subscribe(
@@ -367,7 +376,7 @@ public class MainController {
      * 등록된 레포 목록을 비동기로 로드하여 사이드바에 표시한다.
      */
     private void loadRepoList() {
-        loadRepoListWithStatus("✓ Ready");
+        loadRepoListWithStatus(STATUS_READY);
     }
 
     /**
@@ -458,7 +467,7 @@ public class MainController {
      * </p>
      */
     private void refreshRepoDetail(Repository repo) {
-        refreshRepoDetailWithStatus(repo, "✓ Ready");
+        refreshRepoDetailWithStatus(repo, STATUS_READY);
     }
 
     /**
@@ -1211,8 +1220,8 @@ public class MainController {
     private void setStatusDone(String message) {
         progressIndicator.setVisible(false);
         statusLabel.setText(message);
-        // "✓ Ready" 자체일 때는 페이드 불필요
-        if (!"✓ Ready".equals(message)) {
+        // STATUS_READY 자체일 때는 페이드 불필요
+        if (!STATUS_READY.equals(message)) {
             scheduleStatusFade();
         }
     }
@@ -1227,17 +1236,17 @@ public class MainController {
     }
 
     /**
-     * 상태바 메시지를 5초 후 "✓ Ready"로 자동 복원한다 (토스트 효과).
+     * 상태바 메시지를 {@value STATUS_FADE_SECONDS}초 후 기본 상태로 자동 복원한다 (토스트 효과).
      * 중간에 다른 메시지가 설정되면 이전 타이머는 무효화된다.
      */
     private int statusFadeGeneration = 0;
 
     private void scheduleStatusFade() {
         final int gen = ++statusFadeGeneration;
-        javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(5));
+        javafx.animation.PauseTransition pause = new javafx.animation.PauseTransition(javafx.util.Duration.seconds(STATUS_FADE_SECONDS));
         pause.setOnFinished(e -> {
             if (gen == statusFadeGeneration) {
-                statusLabel.setText("✓ Ready");
+                statusLabel.setText(STATUS_READY);
             }
         });
         pause.play();
