@@ -302,6 +302,54 @@ class GitServiceTest {
                 cmd.contains("checkout") && cmd.contains("--") && cmd.contains("file.txt")));
     }
 
+    // ========== Clone ==========
+
+    @Test
+    void cloneRepo_url_빈문자열_예외() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.cloneRepo("", Path.of("/test/new-repo")));
+    }
+
+    @Test
+    void cloneRepo_url_null_예외() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.cloneRepo(null, Path.of("/test/new-repo")));
+    }
+
+    @Test
+    void cloneRepo_targetDir_null_예외() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.cloneRepo("https://github.com/a/b.git", null));
+    }
+
+    // ========== injectTokenIntoUrl ==========
+
+    @Test
+    void injectTokenIntoUrl_https_정상삽입() {
+        String result = GitService.injectTokenIntoUrl(
+                "https://github.com/owner/repo.git", "ghp_test123");
+        assertEquals("https://ghp_test123@github.com/owner/repo.git", result);
+    }
+
+    @Test
+    void injectTokenIntoUrl_토큰없음_원본반환() {
+        String url = "https://github.com/owner/repo.git";
+        assertEquals(url, GitService.injectTokenIntoUrl(url, null));
+        assertEquals(url, GitService.injectTokenIntoUrl(url, ""));
+    }
+
+    @Test
+    void injectTokenIntoUrl_ssh_원본반환() {
+        String url = "git@github.com:owner/repo.git";
+        assertEquals(url, GitService.injectTokenIntoUrl(url, "ghp_test123"));
+    }
+
+    @Test
+    void injectTokenIntoUrl_이미_인증정보_있음_원본반환() {
+        String url = "https://user@github.com/owner/repo.git";
+        assertEquals(url, GitService.injectTokenIntoUrl(url, "ghp_test123"));
+    }
+
     // ========== Executor 접근 ==========
 
     @Test

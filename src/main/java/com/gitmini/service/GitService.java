@@ -347,6 +347,88 @@ public class GitService {
         requireSuccess(result, "discard");
     }
 
+    // ========== Clone ==========
+
+    /**
+     * 원격 레포지토리를 로컬에 클론한다.
+     * <p>
+     * {@code git clone <url> <targetDir>} 을 실행한다.
+     * 네트워크 타임아웃(120초)이 적용된다.
+     * </p>
+     *
+     * @param url       클론할 URL (HTTPS 또는 SSH)
+     * @param targetDir 클론 대상 디렉토리 (존재하지 않아야 함)
+     * @throws GitExecutionException 클론 실패 시
+     * @throws IllegalArgumentException URL이 비었거나 targetDir이 이미 존재할 때
+     */
+    public void cloneRepo(String url, java.nio.file.Path targetDir) {
+        if (url == null || url.isBlank()) {
+            throw new IllegalArgumentException("클론 URL이 비어 있습니다");
+        }
+        if (targetDir == null) {
+            throw new IllegalArgumentException("클론 대상 경로가 지정되지 않았습니다");
+        }
+        if (java.nio.file.Files.exists(targetDir)) {
+            throw new IllegalArgumentException("대상 경로가 이미 존재합니다: " + targetDir);
+        }
+
+        // 작업 디렉토리 = 대상의 부모 (존재해야 함)
+        java.nio.file.Path parentDir = targetDir.getParent();
+        if (parentDir == null || !java.nio.file.Files.isDirectory(parentDir)) {
+            throw new IllegalArgumentException("부모 디렉토리가 존재하지 않습니다: " + parentDir);
+        }
+
+        log.info("Clone 시작: {} → {}", maskTokenInUrl(url), targetDir);
+
+        GitResult result = executor.execute(parentDir,
+                GitCommandBuilder.git().cloneRepo().progress()
+                        .arg(url).arg(targetDir.toString()).build(),
+                GitExecutor.NETWORK_TIMEOUT_SECONDS);
+
+        // git clone은 성공 시에도 stderr에 진행 정보를 출력한다.
+        // exit code로만 성공 판단.
+        if (!result.isSuccess()) {
+            throw new GitExecutionException(
+                    "Clone 실패: " + result.stderr(),
+                    result.exitCode(),
+                    result.stderr()
+            );
+        }
+
+        log.info("Clone 완료: {} ({}ms)", targetDir, result.durationMs());
+    }
+
+    /**
+     * URL에 포함된 토큰을 마스킹한다 (로깅용).
+     * "https://ghp_abc123@github.com/..." → "https://***@github.com/..."
+     */
+    private static String maskTokenInUrl(String url) {
+        if (url == null) return null;
+        return url.replaceAll("(https?://)([^@]+)@", "$1***@");
+    }
+
+    /**
+     * PAT를 HTTPS URL에 삽입하여 인증된 클론 URL을 만든다.
+     * <p>
+     * 입력: https://github.com/owner/repo.git + token
+     * 출력: https://token@github.com/owner/repo.git
+     * </p>
+     * HTTPS가 아니거나 토큰이 없으면 원본 URL을 그대로 반환한다.
+     *
+     * @param url   원본 클론 URL
+     * @param token PAT (null이면 원본 반환)
+     * @return 인증 정보가 삽입된 URL
+     */
+    public static String injectTokenIntoUrl(String url, String token) {
+        if (token == null || token.isBlank()) return url;
+        if (url == null || !url.startsWith("https://")) return url;
+
+        // 이미 인증 정보가 포함된 경우 교체하지 않음
+        if (url.contains("@")) return url;
+
+        return url.replaceFirst("https://", "https://" + token + "@");
+    }
+
     // ========== 유틸리티 ==========
 
     /**

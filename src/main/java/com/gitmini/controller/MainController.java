@@ -620,8 +620,220 @@ public class MainController {
     @FXML
     private void onCloneRepo() {
         log.info("Clone 버튼 클릭");
-        // Step 3에서 구현
-        setStatus("Clone — Step 3에서 구현 예정");
+
+        // Clone 다이얼로그 구성 (URL + 경로 + Clone 버튼)
+        javafx.scene.control.Dialog<Void> dialog = new javafx.scene.control.Dialog<>();
+        dialog.setTitle("레포지토리 Clone");
+        dialog.setHeaderText("GitHub 레포지토리를 로컬에 Clone합니다");
+        javafx.stage.Window owner = getMainWindow();
+        if (owner != null) dialog.initOwner(owner);
+
+        // 다이얼로그 내부 레이아웃
+        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(12);
+        content.setPrefWidth(480);
+        content.setPadding(new javafx.geometry.Insets(12, 0, 0, 0));
+
+        TextField urlField = new TextField();
+        urlField.setPromptText("https://github.com/owner/repo.git");
+
+        // 기본 Clone 경로 로드
+        com.gitmini.config.ConfigManager cm = GitMiniApp.getConfigManager();
+        String defaultPath = cm != null ? cm.load().getDefaultClonePath() : "";
+
+        TextField pathField = new TextField(defaultPath);
+        pathField.setPromptText("Clone 대상 폴더");
+
+        Button browseBtn = new Button("...");
+        browseBtn.setPrefWidth(36);
+        browseBtn.setOnAction(e -> {
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle("Clone 대상 폴더 선택");
+            String current = pathField.getText();
+            if (current != null && !current.isBlank()) {
+                File dir = new File(current);
+                if (dir.isDirectory()) chooser.setInitialDirectory(dir);
+            }
+            File selected = chooser.showDialog(dialog.getDialogPane().getScene().getWindow());
+            if (selected != null) pathField.setText(selected.getAbsolutePath());
+        });
+
+        javafx.scene.layout.HBox pathRow = new javafx.scene.layout.HBox(8);
+        pathRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        pathField.setMaxWidth(Double.MAX_VALUE);
+        javafx.scene.layout.HBox.setHgrow(pathField, javafx.scene.layout.Priority.ALWAYS);
+        pathRow.getChildren().addAll(pathField, browseBtn);
+
+        Label statusLbl = new Label("");
+        statusLbl.setStyle("-fx-font-size: 12px;");
+
+        ProgressIndicator cloneProgress = new ProgressIndicator();
+        cloneProgress.setPrefSize(18, 18);
+        cloneProgress.setVisible(false);
+        cloneProgress.managedProperty().bind(cloneProgress.visibleProperty());
+
+        javafx.scene.layout.HBox statusRow = new javafx.scene.layout.HBox(8);
+        statusRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        statusRow.getChildren().addAll(cloneProgress, statusLbl);
+
+        content.getChildren().addAll(
+                new Label("레포지토리 URL:"), urlField,
+                new Label("Clone 경로:"), pathRow,
+                statusRow
+        );
+
+        dialog.getDialogPane().setContent(content);
+
+        // 버튼: Clone + 취소
+        javafx.scene.control.ButtonType cloneButtonType =
+                new javafx.scene.control.ButtonType("Clone", javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(cloneButtonType, javafx.scene.control.ButtonType.CANCEL);
+
+        // Clone 버튼 참조
+        Button cloneBtn = (Button) dialog.getDialogPane().lookupButton(cloneButtonType);
+        // URL 비어 있으면 Clone 버튼 비활성화
+        // 바인딩 대신 리스너 사용 (이후 setDisable 직접 호출과 충돌 방지)
+        cloneBtn.setDisable(true);
+        urlField.textProperty().addListener((obs, o, n) ->
+                cloneBtn.setDisable(n == null || n.trim().isEmpty()));
+
+        // Clone 버튼 클릭 시 직접 처리 (다이얼로그 자동 닫힘 방지)
+        cloneBtn.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            event.consume(); // 다이얼로그 자동 닫힘 방지
+
+            String url = urlField.getText().trim();
+            String basePath = pathField.getText().trim();
+
+            if (url.isEmpty()) {
+                statusLbl.setText("URL을 입력하세요");
+                statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-danger-fg;");
+                return;
+            }
+            if (basePath.isEmpty()) {
+                statusLbl.setText("Clone 경로를 선택하세요");
+                statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-danger-fg;");
+                return;
+            }
+
+            // URL에서 레포 이름 추출 → 대상 경로 결정
+            String repoName = extractRepoName(url);
+            Path targetDir = Path.of(basePath, repoName);
+
+            if (java.nio.file.Files.exists(targetDir)) {
+                statusLbl.setText("이미 존재하는 폴더: " + repoName);
+                statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-danger-fg;");
+                return;
+            }
+
+            // PAT가 있으면 HTTPS URL에 삽입
+            com.gitmini.service.GitHubService ghService = GitMiniApp.getGitHubService();
+            String cloneUrl = url;
+            if (ghService != null) {
+                java.util.Optional<String> token = ghService.getToken();
+                if (token.isPresent()) {
+                    cloneUrl = GitService.injectTokenIntoUrl(url, token.get());
+                }
+            }
+
+            // UI 잠금
+            urlField.setDisable(true);
+            pathField.setDisable(true);
+            browseBtn.setDisable(true);
+            cloneBtn.setDisable(true);
+            cloneProgress.setVisible(true);
+            statusLbl.setText("Clone 중...");
+            statusLbl.setStyle("-fx-font-size: 12px;");
+
+            TaskManager taskManager = GitMiniApp.getTaskManager();
+            GitService gitService = GitMiniApp.getGitService();
+            if (taskManager == null || gitService == null) return;
+
+            final String finalCloneUrl = cloneUrl;
+            final Path finalTargetDir = targetDir;
+
+            taskManager.run(
+                    () -> { gitService.cloneRepo(finalCloneUrl, finalTargetDir); return finalTargetDir; },
+                    result -> {
+                        cloneProgress.setVisible(false);
+                        statusLbl.setText("✓ Clone 완료: " + repoName);
+                        statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-success-fg;");
+                        log.info("Clone 완료: {}", finalTargetDir);
+
+                        // 레포 목록에 추가
+                        RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
+                        if (repoManager != null) {
+                            taskManager.run(
+                                    () -> { repoManager.add(finalTargetDir); return null; },
+                                    r -> {
+                                        loadRepoListWithStatus("✓ Clone + 레포 추가 완료: " + repoName);
+                                        // 다이얼로그 닫기
+                                        dialog.setResult(null);
+                                        dialog.close();
+                                    },
+                                    err -> {
+                                        log.warn("Clone 후 레포 추가 실패: {}", err.getMessage());
+                                        statusLbl.setText("Clone 완료, 레포 등록 실패: " + err.getMessage());
+                                        statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-warning-fg;");
+                                        // 버튼 복원
+                                        urlField.setDisable(false);
+                                        pathField.setDisable(false);
+                                        browseBtn.setDisable(false);
+                                        cloneBtn.setDisable(false);
+                                    }
+                            );
+                        }
+                    },
+                    error -> {
+                        cloneProgress.setVisible(false);
+                        urlField.setDisable(false);
+                        pathField.setDisable(false);
+                        browseBtn.setDisable(false);
+                        cloneBtn.setDisable(false);
+
+                        String errMsg = mapRemoteErrorMessage(error.getMessage());
+                        statusLbl.setText("✗ " + errMsg);
+                        statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-danger-fg;");
+                        log.error("Clone 실패: {}", error.getMessage());
+                    }
+            );
+        });
+
+        // 다이얼로그 CSS 적용
+        dialog.getDialogPane().getStylesheets().add(
+                Objects.requireNonNull(getClass().getResource("/css/app.css"),
+                        "app.css를 찾을 수 없습니다").toExternalForm());
+
+        dialog.showAndWait();
+    }
+
+    /**
+     * Clone URL에서 레포지토리 이름을 추출한다.
+     * <p>
+     * 예: "https://github.com/owner/repo.git" → "repo"
+     * 예: "https://github.com/owner/repo" → "repo"
+     * 예: "git@github.com:owner/repo.git" → "repo"
+     * </p>
+     */
+    private static String extractRepoName(String url) {
+        if (url == null || url.isBlank()) return "repo";
+
+        // 끝의 .git 제거
+        String cleaned = url.endsWith(".git") ? url.substring(0, url.length() - 4) : url;
+        // 끝의 / 제거
+        if (cleaned.endsWith("/")) cleaned = cleaned.substring(0, cleaned.length() - 1);
+        // 마지막 / 뒤의 이름
+        int lastSlash = cleaned.lastIndexOf('/');
+        if (lastSlash >= 0 && lastSlash < cleaned.length() - 1) {
+            return cleaned.substring(lastSlash + 1);
+        }
+        // SSH 형식: git@github.com:owner/repo
+        int lastColon = cleaned.lastIndexOf(':');
+        if (lastColon >= 0) {
+            String afterColon = cleaned.substring(lastColon + 1);
+            int slash = afterColon.lastIndexOf('/');
+            if (slash >= 0) return afterColon.substring(slash + 1);
+            return afterColon;
+        }
+        return "repo";
     }
 
     /**
@@ -1481,6 +1693,13 @@ public class MainController {
                 new KeyCodeCombination(KeyCode.F, KeyCombination.CONTROL_DOWN, KeyCombination.SHIFT_DOWN),
                 this::onFetch
         );
+
+        // 단축키 툴팁 — 마우스 올리면 단축키 표시
+        commitBtn.setTooltip(new Tooltip("Commit (Ctrl+Enter)"));
+        pushBtn.setTooltip(new Tooltip("Push (Ctrl+Shift+P)"));
+        pullBtn.setTooltip(new Tooltip("Pull (Ctrl+Shift+L)"));
+        fetchBtn.setTooltip(new Tooltip("Fetch (Ctrl+Shift+F)"));
+
         log.debug("키보드 단축키 등록: Ctrl+Enter(Commit), Ctrl+Shift+P(Push), Ctrl+Shift+L(Pull), Ctrl+Shift+F(Fetch)");
     }
 

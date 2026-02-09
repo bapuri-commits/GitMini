@@ -113,6 +113,12 @@ public class GitCommandBuilder {
         return this;
     }
 
+    /** git clone (Java의 clone()과 충돌 방지를 위해 cloneRepo로 명명). */
+    public GitCommandBuilder cloneRepo() {
+        args.add("clone");
+        return this;
+    }
+
     public GitCommandBuilder version() {
         args.add("--version");
         return this;
@@ -178,6 +184,11 @@ public class GitCommandBuilder {
 
     public GitCommandBuilder leftRight() {
         args.add("--left-right");
+        return this;
+    }
+
+    public GitCommandBuilder progress() {
+        args.add("--progress");
         return this;
     }
 
