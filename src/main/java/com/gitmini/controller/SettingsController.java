@@ -55,6 +55,9 @@ public class SettingsController {
     /** 저장 성공 여부. 호출자(MainController)가 확인할 수 있다. */
     private boolean saved = false;
 
+    /** 토큰 삭제 예약 플래그. "저장" 시에만 실제 삭제를 수행한다. */
+    private boolean tokenDeletePending = false;
+
     /** 자동 Fetch 주기 옵션 (분). */
     private static final int[] FETCH_INTERVALS = {1, 2, 3, 5, 10, 15, 30, 60};
 
@@ -162,17 +165,13 @@ public class SettingsController {
      */
     @FXML
     private void onTokenDelete() {
-        ConfigManager configManager = GitMiniApp.getConfigManager();
-        if (configManager == null) return;
-
-        TokenManager tokenManager = new TokenManager(configManager.getConfigDir());
-        tokenManager.deleteToken();
-
+        // 즉시 삭제하지 않고, 저장 시에만 실제 삭제 (취소 시 복원 가능)
+        tokenDeletePending = true;
         tokenField.clear();
         tokenField.setPromptText("ghp_xxxxxxxxxxxx");
-        tokenStatusLabel.setText("토큰 삭제됨");
+        tokenStatusLabel.setText("토큰 삭제 예정 (저장 시 적용)");
         tokenStatusLabel.setStyle("-fx-text-fill: -color-fg-muted;");
-        log.info("토큰 삭제 완료");
+        log.info("토큰 삭제 예약됨 (저장 시 실제 삭제)");
     }
 
     // ========== 일반 설정 ==========
@@ -228,10 +227,15 @@ public class SettingsController {
             log.info("설정 저장 완료: autoFetch={}분, clonePath={}",
                     config.getAutoFetchIntervalMinutes(), config.getDefaultClonePath());
 
-            // 토큰 저장 (입력된 경우에만)
+            // 토큰 처리: 삭제 예약 > 새 입력 > 변경 없음
+            TokenManager tokenManager = new TokenManager(configManager.getConfigDir());
             String inputToken = tokenField.getText();
-            if (inputToken != null && !inputToken.isBlank()) {
-                TokenManager tokenManager = new TokenManager(configManager.getConfigDir());
+            if (tokenDeletePending && (inputToken == null || inputToken.isBlank())) {
+                // 삭제 예약 + 새 입력 없음 → 실제 삭제
+                tokenManager.deleteToken();
+                log.info("토큰 삭제 완료");
+            } else if (inputToken != null && !inputToken.isBlank()) {
+                // 새 토큰 입력됨 → 저장 (삭제 예약은 무시)
                 tokenManager.saveToken(inputToken.trim());
                 log.info("토큰 저장 완료");
             }
