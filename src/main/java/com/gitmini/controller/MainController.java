@@ -2041,8 +2041,10 @@ public class MainController {
                             null, workDir);
                     break;
                 case "wt":
+                    // Windows Terminal은 Microsoft Store 설치 시 PATH에 없을 수 있으므로
+                    // cmd /c start 경유로 셸의 PATH 해석을 활용한다.
                     Runtime.getRuntime().exec(
-                            new String[]{"wt", "-d", directory},
+                            new String[]{"cmd", "/c", "start", "wt", "-d", directory},
                             null, workDir);
                     break;
                 default: // cmd
