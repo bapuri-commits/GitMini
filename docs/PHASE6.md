@@ -128,3 +128,10 @@ Step 3: 파일 필터 검증 + Phase 6 마무리
   - Step 3: 파일 필터 검증 (이미 구현됨, 동작 확인)
 - **총 테스트**: 233개 PASSED (Phase 5 대비 +8).
 - **보류 항목**: 원클릭 워크플로우, Stash, 기본 Merge.
+
+### 후속 리팩토링 (v1.1.1 → v1.2.0)
+
+- **v1.1.1**: 매직 넘버 상수화 (`MAX_COMMAND_LOG_SIZE`, `STATUS_FADE_SECONDS`, `STATUS_READY`, `CMD_TIME_FORMAT`) + 설정 경합 해결 (`ConfigManager.update(Consumer)` 원자적 업데이트, 6곳 적용).
+- **v1.2.0**: TaskManager.run() 보일러플레이트 제거 (`runGitTask`/`runRemoteGitTask` 헬퍼 추출, 7개 액션 메서드 간소화, -43줄).
+- **보류**: MainController 분리 (2,200줄 God Object) — 현재 안정적이므로 기능 추가 시 해당 영역만 분리 예정.
+- **GitHub Release**: https://github.com/bapuri-commits/GitMini/releases/tag/v1.2.0
