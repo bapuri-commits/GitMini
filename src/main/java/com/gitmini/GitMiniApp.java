@@ -153,8 +153,18 @@ public class GitMiniApp extends Application {
         Parent root = loader.load();
         mainController = loader.getController();
 
+        // 저장된 창 크기가 화면보다 크면 기본값으로 복원 (최대화 종료 후 재시작 시 잘림 방지)
+        double savedW = appConfig.getWindowWidth();
+        double savedH = appConfig.getWindowHeight();
+        javafx.geometry.Rectangle2D screenBounds = javafx.stage.Screen.getPrimary().getVisualBounds();
+        if (savedW >= screenBounds.getWidth() || savedH >= screenBounds.getHeight()) {
+            savedW = Math.min(1200, screenBounds.getWidth() * 0.8);
+            savedH = Math.min(800, screenBounds.getHeight() * 0.8);
+            log.info("저장된 창 크기가 화면보다 큼 → 기본값으로 복원 ({}x{})", savedW, savedH);
+        }
+
         // Scene 설정
-        Scene scene = new Scene(root, appConfig.getWindowWidth(), appConfig.getWindowHeight());
+        Scene scene = new Scene(root, savedW, savedH);
         scene.getStylesheets().add(
                 Objects.requireNonNull(getClass().getResource("/css/app.css"),
                         "app.css를 찾을 수 없습니다").toExternalForm());
@@ -180,10 +190,13 @@ public class GitMiniApp extends Application {
             // OK를 누르면 event가 처리되어 정상 종료 → stop() 호출
         });
 
-        // 저장된 창 위치 복원 (-1이면 화면 중앙)
-        if (appConfig.getWindowX() >= 0 && appConfig.getWindowY() >= 0) {
-            primaryStage.setX(appConfig.getWindowX());
-            primaryStage.setY(appConfig.getWindowY());
+        // 저장된 창 위치 복원 (-1이면 화면 중앙, 화면 밖이면 무시)
+        double savedX = appConfig.getWindowX();
+        double savedY = appConfig.getWindowY();
+        if (savedX >= 0 && savedY >= 0
+                && savedX < screenBounds.getMaxX() && savedY < screenBounds.getMaxY()) {
+            primaryStage.setX(savedX);
+            primaryStage.setY(savedY);
         }
 
         primaryStage.show();
