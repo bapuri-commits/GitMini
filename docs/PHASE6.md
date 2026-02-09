@@ -1,6 +1,6 @@
 # Phase 6: 확장
 
-> **상태**: 진행 중  
+> **상태**: 완료  
 > **이전 Phase**: Phase 5 완료, 225개 테스트 PASSED, jpackage .exe 빌드 완료  
 > **기준 문서**: DESIGN.md §Phase 6
 
@@ -106,8 +106,25 @@ Step 3: 파일 필터 검증 + Phase 6 마무리
 
 - **검증**: `gradlew build` 233개 PASSED.
 
+### Step 3: 파일 필터 검증 + Phase 6 마무리
+
+- 이미 구현된 파일 필터 검증:
+  - `unstagedSearchField` / `stagedSearchField`: TextArea 실시간 필터링 (대소문자 무시, 부분 일치).
+  - `applyFilterUnstaged()` / `applyFilterStaged()`: null/blank 안전, 빈 검색어 시 전체 목록 복원.
+  - 정상 동작 확인.
+
+- 전체 코드 감사: DESIGN.md §Phase 6 요구사항 전부 대조 완료.
+
 ---
 
 ## 3. 종료
 
-*(Phase 6 완료 시 기록)*
+**Phase 6 완료.** 2026-02-09.
+
+- **검증**: `gradlew build` 233개 PASSED.
+- **완료 요약**: Step 1~2 + Step 3(검증/마무리).
+  - Step 1: 커밋 메시지 히스토리 (레포별 분리, 드롭다운, 지우기, 커밋 취소 연동, strip 중복 수정)
+  - Step 2: 시스템 트레이 (트레이 아이콘, X→최소화, 열기/종료 메뉴, 더블클릭 복원, 자동 Fetch 알림, 설정 토글)
+  - Step 3: 파일 필터 검증 (이미 구현됨, 동작 확인)
+- **총 테스트**: 233개 PASSED (Phase 5 대비 +8).
+- **보류 항목**: 원클릭 워크플로우, Stash, 기본 Merge.
