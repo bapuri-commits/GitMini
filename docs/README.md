@@ -21,4 +21,6 @@
 |------|-------|------|
 | [PHASE1.md](PHASE1.md) | 환경 설정 + 프로젝트 뼈대 | 완료 |
 | [PHASE2.md](PHASE2.md) | Git 연동 핵심 | 완료 |
-| [PHASE3.md](PHASE3.md) | UI 구현 | 착수 대기 |
+| [PHASE3.md](PHASE3.md) | UI 구현 | 완료 |
+| [PHASE4.md](PHASE4.md) | GitHub API 연동 | 완료 |
+| [PHASE5.md](PHASE5.md) | 완성도 | 완료 |
