@@ -363,7 +363,7 @@ public class GitHubService {
                     obj.has("private") && obj.get("private").getAsBoolean(),
                     getStringOrNull(obj, "default_branch")
             );
-        } catch (JsonSyntaxException e) {
+        } catch (JsonSyntaxException | IllegalStateException e) {
             log.error("GitHub 레포 정보 파싱 실패", e);
             throw new GitHubApiException("GitHub 응답 파싱 실패", e);
         }
