@@ -40,6 +40,7 @@ public class SettingsController {
     @FXML private ComboBox<String> autoFetchComboBox;
     @FXML private TextField defaultClonePathField;
     @FXML private ComboBox<String> terminalComboBox;
+    @FXML private CheckBox minimizeToTrayCheckBox;
 
     // ========== FXML 바인딩: GitHub ==========
 
@@ -149,6 +150,11 @@ public class SettingsController {
         }
         if (!terminalSet) {
             terminalComboBox.getSelectionModel().select(0); // 기본 CMD
+        }
+
+        // 트레이 최소화
+        if (minimizeToTrayCheckBox != null) {
+            minimizeToTrayCheckBox.setSelected(config.isMinimizeToTray());
         }
 
         // 토큰: 저장된 토큰이 있으면 마스킹 표시
@@ -282,6 +288,11 @@ public class SettingsController {
             int terminalIdx = terminalComboBox.getSelectionModel().getSelectedIndex();
             if (terminalIdx >= 0 && terminalIdx < TERMINAL_OPTIONS.length) {
                 config.setExternalTerminal(TERMINAL_OPTIONS[terminalIdx][1]);
+            }
+
+            // 트레이 최소화
+            if (minimizeToTrayCheckBox != null) {
+                config.setMinimizeToTray(minimizeToTrayCheckBox.isSelected());
             }
 
             // 기본 Clone 경로 — 비어 있지 않으면 유효성 검증

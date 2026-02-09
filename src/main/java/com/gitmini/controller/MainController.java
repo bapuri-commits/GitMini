@@ -2058,6 +2058,12 @@ public class MainController {
                     if (result != null) {
                         refreshRepoDetailWithStatus(targetRepo, "✓ 자동 Fetch 완료");
                         log.debug("자동 Fetch 완료: {}", targetRepo.getName());
+                        // 트레이 알림: behind > 0이면 원격에 새 커밋 있음
+                        if (targetRepo.getBehind() > 0) {
+                            GitMiniApp.showTrayNotification(
+                                    "GitMini — " + targetRepo.getName(),
+                                    "원격에 " + targetRepo.getBehind() + "개의 새 커밋이 있습니다.");
+                        }
                     }
                 },
                 error -> log.debug("자동 Fetch 실패 (무시): {}", error.getMessage())

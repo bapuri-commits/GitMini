@@ -21,6 +21,7 @@ public class AppConfig {
     private double windowY;
     private String defaultClonePath;
     private String externalTerminal;
+    private boolean minimizeToTray;
     /** 레포별 커밋 메시지 히스토리. key = 레포 경로, value = 최근 메시지 목록 (최신 우선). */
     private Map<String, List<String>> commitMessageHistory;
 
@@ -37,6 +38,7 @@ public class AppConfig {
         this.windowY = -1;
         this.defaultClonePath = "";
         this.externalTerminal = "cmd";
+        this.minimizeToTray = true;
         this.commitMessageHistory = new LinkedHashMap<>();
     }
 
@@ -130,6 +132,14 @@ public class AppConfig {
 
     public void setExternalTerminal(String externalTerminal) {
         this.externalTerminal = externalTerminal;
+    }
+
+    public boolean isMinimizeToTray() {
+        return minimizeToTray;
+    }
+
+    public void setMinimizeToTray(boolean minimizeToTray) {
+        this.minimizeToTray = minimizeToTray;
     }
 
     public Map<String, List<String>> getCommitMessageHistory() {

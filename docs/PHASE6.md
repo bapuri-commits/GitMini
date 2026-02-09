@@ -80,6 +80,32 @@ Step 3: 파일 필터 검증 + Phase 6 마무리
 
 - **검증**: `gradlew build` 233개 PASSED.
 
+### Step 2: 시스템 트레이
+
+- `AppConfig.java`: `minimizeToTray` 필드 추가 (boolean, 기본값 true).
+
+- `GitMiniApp.java`:
+  - `setupSystemTray()`: 설정 확인 + `SystemTray.isSupported()` 확인 후 트레이 아이콘 등록.
+  - `Platform.setImplicitExit(false)`: 창 닫아도 JavaFX 종료하지 않음.
+  - `createTrayImage()`: 16x16 프로그래밍 생성 아이콘 (파란색 배경 + 흰색 'G').
+  - `onCloseRequest` 변경: 트레이 활성 시 hide, 비활성 시 기존 종료 확인 다이얼로그.
+  - `showMainWindow()`: 트레이에서 창 복원 (show + toFront + deIconify).
+  - `exitApplication()`: 트레이 제거 → Platform.exit() → stop() 정상 종료 흐름.
+  - `saveWindowState()`: stop()에서 추출. 창이 숨겨진 상태에서는 저장 안 함.
+  - `showTrayNotification(title, message)`: static 메서드. 창 숨김 상태에서만 알림 표시.
+  - `removeTrayIcon()`: stop()에서 호출. 트레이 아이콘 정리.
+  - 트레이 메뉴: "GitMini 열기", "종료". 더블클릭 → 열기.
+
+- `settings.fxml` + `SettingsController.java`:
+  - "닫기 시 트레이로 최소화 (백그라운드 Fetch 유지)" 체크박스 추가.
+  - 로드/저장 연동. 변경 시 앱 재시작 필요.
+
+- `MainController.java`:
+  - `doAutoFetch()`: Fetch 성공 후 behind > 0이면 `GitMiniApp.showTrayNotification()` 호출.
+  - 창이 보이는 상태에서는 알림 안 표시 (showTrayNotification 내부에서 필터).
+
+- **검증**: `gradlew build` 233개 PASSED.
+
 ---
 
 ## 3. 종료
