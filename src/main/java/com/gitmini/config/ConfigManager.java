@@ -12,6 +12,7 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.Consumer;
 
 /**
  * 앱 설정을 JSON 파일로 관리한다.
@@ -113,6 +114,22 @@ public class ConfigManager {
             log.error("설정 저장 실패: {}", configFile, e);
             throw new ConfigException("설정 저장 실패: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * 설정을 원자적으로 갱신한다 (load → modify → save).
+     * <p>
+     * 여러 곳에서 설정을 수정할 때 load-modify-save 사이의 경합을 방지한다.
+     * synchronized로 보호되므로, 동시 호출 시 마지막 변경이 덮어쓰는 문제가 발생하지 않는다.
+     * </p>
+     *
+     * @param modifier 현재 설정을 받아 수정하는 콜백
+     * @throws ConfigException 저장 실패 시
+     */
+    public synchronized void update(Consumer<AppConfig> modifier) {
+        AppConfig config = load();
+        modifier.accept(config);
+        save(config);
     }
 
     /**

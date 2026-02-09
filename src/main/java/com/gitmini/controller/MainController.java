@@ -1889,19 +1889,17 @@ public class MainController {
             String trimmed = message.strip();
             if (trimmed.isEmpty()) return;
 
-            com.gitmini.config.AppConfig config = configManager.load();
-            java.util.Map<String, List<String>> historyMap = config.getCommitMessageHistory();
-            List<String> history = new java.util.ArrayList<>(historyMap.getOrDefault(repoKey, List.of()));
-            // 중복 제거 후 맨 앞에 추가
-            history.remove(trimmed);
-            history.add(0, trimmed);
-            // 최대 개수 유지
-            while (history.size() > MAX_COMMIT_MSG_HISTORY) {
-                history.remove(history.size() - 1);
-            }
-            historyMap.put(repoKey, history);
-            configManager.save(config);
-            log.debug("커밋 메시지 히스토리 저장 ({}): {}개", selectedRepo.getName(), history.size());
+            configManager.update(config -> {
+                java.util.Map<String, List<String>> historyMap = config.getCommitMessageHistory();
+                List<String> history = new java.util.ArrayList<>(historyMap.getOrDefault(repoKey, List.of()));
+                history.remove(trimmed);
+                history.add(0, trimmed);
+                while (history.size() > MAX_COMMIT_MSG_HISTORY) {
+                    history.remove(history.size() - 1);
+                }
+                historyMap.put(repoKey, history);
+            });
+            log.debug("커밋 메시지 히스토리 저장 ({})", selectedRepo.getName());
         } catch (Exception e) {
             log.warn("커밋 메시지 히스토리 저장 실패", e);
         }
@@ -1919,18 +1917,18 @@ public class MainController {
             String trimmed = message.strip();
             if (trimmed.isEmpty()) return;
 
-            com.gitmini.config.AppConfig config = configManager.load();
-            java.util.Map<String, List<String>> historyMap = config.getCommitMessageHistory();
-            List<String> history = new java.util.ArrayList<>(historyMap.getOrDefault(repoKey, List.of()));
-            if (history.remove(trimmed)) {
-                if (history.isEmpty()) {
-                    historyMap.remove(repoKey);
-                } else {
-                    historyMap.put(repoKey, history);
+            configManager.update(config -> {
+                java.util.Map<String, List<String>> historyMap = config.getCommitMessageHistory();
+                List<String> history = new java.util.ArrayList<>(historyMap.getOrDefault(repoKey, List.of()));
+                if (history.remove(trimmed)) {
+                    if (history.isEmpty()) {
+                        historyMap.remove(repoKey);
+                    } else {
+                        historyMap.put(repoKey, history);
+                    }
                 }
-                configManager.save(config);
-                log.debug("커밋 메시지 히스토리에서 제거: {}", trimmed.lines().findFirst().orElse(""));
-            }
+            });
+            log.debug("커밋 메시지 히스토리에서 제거: {}", message.lines().findFirst().orElse(""));
         } catch (Exception e) {
             log.warn("커밋 메시지 히스토리 제거 실패", e);
         }
@@ -1945,9 +1943,7 @@ public class MainController {
         if (configManager == null || repoKey == null) return;
 
         try {
-            com.gitmini.config.AppConfig config = configManager.load();
-            config.getCommitMessageHistory().remove(repoKey);
-            configManager.save(config);
+            configManager.update(config -> config.getCommitMessageHistory().remove(repoKey));
             log.info("커밋 메시지 히스토리 초기화: {}", selectedRepo != null ? selectedRepo.getName() : repoKey);
         } catch (Exception e) {
             log.warn("커밋 메시지 히스토리 초기화 실패", e);

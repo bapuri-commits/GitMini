@@ -19,6 +19,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
+import java.util.function.Consumer;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -163,6 +165,12 @@ class RepositoryManagerTest {
 
         AppConfig config = new AppConfig();
         when(configManager.load()).thenReturn(config);
+        // update() 호출 시 consumer를 실제로 실행하도록 설정
+        doAnswer(inv -> {
+            Consumer<AppConfig> modifier = inv.getArgument(0);
+            modifier.accept(config);
+            return null;
+        }).when(configManager).update(any());
         when(gitService.status(any(Path.class))).thenReturn(List.of());
         when(gitService.currentBranch(any(Path.class))).thenReturn("main");
         when(gitService.aheadBehind(any(Path.class))).thenReturn(new int[]{0, 0});
@@ -170,8 +178,8 @@ class RepositoryManagerTest {
 
         manager.add(repoPath);
 
-        // 설정 저장 확인
-        verify(configManager).save(argThat(c -> c.getRepoPaths().size() == 1));
+        // update() 호출 확인
+        verify(configManager).update(any());
 
         // 캐시에도 추가되었는지 확인
         List<Repository> repos = manager.getRepositories();
@@ -187,18 +195,23 @@ class RepositoryManagerTest {
 
         AppConfig config = new AppConfig();
         config.getRepoPaths().add(repoPath.toAbsolutePath().normalize().toString());
-        when(configManager.load()).thenReturn(config);
+        doAnswer(inv -> {
+            Consumer<AppConfig> modifier = inv.getArgument(0);
+            modifier.accept(config);
+            return null;
+        }).when(configManager).update(any());
         when(gitService.status(any(Path.class))).thenReturn(List.of());
 
         manager.add(repoPath);
 
-        verify(configManager, never()).save(any());
+        // update()는 호출되지만, 중복이므로 repoPaths 크기는 그대로 1
+        assertEquals(1, config.getRepoPaths().size());
     }
 
     @Test
     void add_디렉터리_아니면_예외() {
         assertThrows(IllegalArgumentException.class, () -> manager.add(Path.of("C:/nonexistent")));
-        verify(configManager, never()).save(any());
+        verify(configManager, never()).update(any());
     }
 
     @Test
@@ -207,7 +220,7 @@ class RepositoryManagerTest {
         Files.createDirectories(noGit);
 
         assertThrows(IllegalArgumentException.class, () -> manager.add(noGit));
-        verify(configManager, never()).save(any());
+        verify(configManager, never()).update(any());
     }
 
     @Test
@@ -220,7 +233,7 @@ class RepositoryManagerTest {
                 .thenThrow(new GitExecutionException("not a git repo", 128, "fatal"));
 
         assertThrows(GitExecutionException.class, () -> manager.add(repoPath));
-        verify(configManager, never()).save(any());
+        verify(configManager, never()).update(any());
     }
 
     // ========== remove ==========
@@ -230,22 +243,32 @@ class RepositoryManagerTest {
         Path path = Path.of("C:/repos/removed");
         AppConfig config = new AppConfig();
         config.getRepoPaths().add("C:\\repos\\removed");
-        when(configManager.load()).thenReturn(config);
+        doAnswer(inv -> {
+            Consumer<AppConfig> modifier = inv.getArgument(0);
+            modifier.accept(config);
+            return null;
+        }).when(configManager).update(any());
 
         manager.remove(path);
 
-        verify(configManager).save(argThat(c -> c.getRepoPaths().isEmpty()));
+        verify(configManager).update(any());
+        assertTrue(config.getRepoPaths().isEmpty());
     }
 
     @Test
     void remove_존재하지_않는_경로는_무시() {
         AppConfig config = new AppConfig();
         config.getRepoPaths().add("C:\\repos\\existing");
-        when(configManager.load()).thenReturn(config);
+        doAnswer(inv -> {
+            Consumer<AppConfig> modifier = inv.getArgument(0);
+            modifier.accept(config);
+            return null;
+        }).when(configManager).update(any());
 
         manager.remove(Path.of("C:/repos/nonexistent"));
 
-        verify(configManager, never()).save(any());
+        // update는 호출되지만, 실제 제거는 안 됨
+        assertEquals(1, config.getRepoPaths().size());
     }
 
     // ========== refreshStatus ==========

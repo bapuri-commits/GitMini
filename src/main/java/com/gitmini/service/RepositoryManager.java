@@ -124,19 +124,21 @@ public class RepositoryManager {
 
         String pathStr = normalized.toString();
 
-        // 설정에 이미 등록되어 있는지 확인 (대소문자 무시, Windows 호환)
-        AppConfig config = configManager.load();
-        boolean alreadyExists = config.getRepoPaths().stream()
-                .anyMatch(p -> Path.of(p).toAbsolutePath().normalize()
-                        .toString().equalsIgnoreCase(pathStr));
-        if (alreadyExists) {
+        // 설정에 등록 (중복 체크 + 추가를 원자적으로 수행)
+        boolean[] added = {false};
+        configManager.update(config -> {
+            boolean alreadyExists = config.getRepoPaths().stream()
+                    .anyMatch(p -> Path.of(p).toAbsolutePath().normalize()
+                            .toString().equalsIgnoreCase(pathStr));
+            if (!alreadyExists) {
+                config.getRepoPaths().add(pathStr);
+                added[0] = true;
+            }
+        });
+        if (!added[0]) {
             log.debug("이미 등록된 레포: {}", pathStr);
             return;
         }
-
-        // 설정 저장
-        config.getRepoPaths().add(pathStr);
-        configManager.save(config);
 
         // 캐시 갱신
         Repository repo = new Repository(pathStr);
@@ -156,14 +158,14 @@ public class RepositoryManager {
     public void remove(Path path) {
         String pathStr = path.toAbsolutePath().normalize().toString();
 
-        // 설정에서 제거 (대소문자 무시)
-        AppConfig config = configManager.load();
-        boolean removed = config.getRepoPaths().removeIf(p ->
-                Path.of(p).toAbsolutePath().normalize()
-                        .toString().equalsIgnoreCase(pathStr));
-        if (removed) {
-            configManager.save(config);
-
+        // 설정에서 제거 (대소문자 무시, 원자적)
+        boolean[] removed = {false};
+        configManager.update(config -> {
+            removed[0] = config.getRepoPaths().removeIf(p ->
+                    Path.of(p).toAbsolutePath().normalize()
+                            .toString().equalsIgnoreCase(pathStr));
+        });
+        if (removed[0]) {
             // 캐시에서도 제거
             cache.removeIf(repo ->
                     Path.of(repo.getPath()).toAbsolutePath().normalize()

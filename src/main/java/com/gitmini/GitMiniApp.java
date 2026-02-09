@@ -362,15 +362,17 @@ public class GitMiniApp extends Application {
     private void saveWindowState() {
         try {
             if (primaryStage != null && configManager != null && primaryStage.isShowing()) {
-                AppConfig currentConfig = configManager.load();
-                currentConfig.setWindowWidth(primaryStage.getWidth());
-                currentConfig.setWindowHeight(primaryStage.getHeight());
-                currentConfig.setWindowX(primaryStage.getX());
-                currentConfig.setWindowY(primaryStage.getY());
-                configManager.save(currentConfig);
-                log.info("설정 저장 완료 (repoPaths: {}개, 창 크기: {}x{})",
-                        currentConfig.getRepoPaths().size(),
-                        primaryStage.getWidth(), primaryStage.getHeight());
+                double w = primaryStage.getWidth();
+                double h = primaryStage.getHeight();
+                double x = primaryStage.getX();
+                double y = primaryStage.getY();
+                configManager.update(config -> {
+                    config.setWindowWidth(w);
+                    config.setWindowHeight(h);
+                    config.setWindowX(x);
+                    config.setWindowY(y);
+                });
+                log.info("설정 저장 완료 (창 크기: {}x{})", w, h);
             }
         } catch (Exception e) {
             log.error("창 상태 저장 실패", e);
