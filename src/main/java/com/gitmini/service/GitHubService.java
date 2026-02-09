@@ -158,6 +158,42 @@ public class GitHubService {
     }
 
     /**
+     * GitHub에 새 레포지토리를 생성한다.
+     * <p>
+     * {@code POST /user/repos} API를 호출한다.
+     * 생성된 레포의 정보를 반환하며, Clone URL을 포함한다.
+     * </p>
+     *
+     * @param name        레포 이름 (예: "my-project")
+     * @param description 레포 설명 (nullable)
+     * @param isPrivate   Private 레포 여부
+     * @param autoInit    README.md로 초기화할지 여부
+     * @return 생성된 레포 정보
+     * @throws GitHubApiException 토큰 없음, 인증 실패, 이름 중복 등
+     */
+    public GitHubRepo createRepository(String name, String description,
+                                       boolean isPrivate, boolean autoInit) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("레포 이름이 비어 있습니다");
+        }
+
+        String token = requireToken();
+
+        JsonObject body = new JsonObject();
+        body.addProperty("name", name.trim());
+        if (description != null && !description.isBlank()) {
+            body.addProperty("description", description.trim());
+        }
+        body.addProperty("private", isPrivate);
+        body.addProperty("auto_init", autoInit);
+
+        HttpResponse<String> response = executePost("/user/repos", token, gson.toJson(body));
+        requireSuccess(response, "레포 생성");
+
+        return parseRepo(response.body());
+    }
+
+    /**
      * 토큰이 저장되어 있는지 확인한다.
      *
      * @return 토큰이 존재하면 true
@@ -310,6 +346,25 @@ public class GitHubService {
             );
         } catch (JsonSyntaxException e) {
             log.error("GitHub 사용자 정보 파싱 실패", e);
+            throw new GitHubApiException("GitHub 응답 파싱 실패", e);
+        }
+    }
+
+    /**
+     * 단일 레포 응답 JSON을 GitHubRepo로 변환한다 (레포 생성 응답용).
+     */
+    private GitHubRepo parseRepo(String json) {
+        try {
+            JsonObject obj = gson.fromJson(json, JsonObject.class);
+            return new GitHubRepo(
+                    getStringOrNull(obj, "full_name"),
+                    getStringOrNull(obj, "clone_url"),
+                    getStringOrNull(obj, "description"),
+                    obj.has("private") && obj.get("private").getAsBoolean(),
+                    getStringOrNull(obj, "default_branch")
+            );
+        } catch (JsonSyntaxException e) {
+            log.error("GitHub 레포 정보 파싱 실패", e);
             throw new GitHubApiException("GitHub 응답 파싱 실패", e);
         }
     }

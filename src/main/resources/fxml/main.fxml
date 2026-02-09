@@ -44,11 +44,13 @@
 
                 <ListView fx:id="repoListView" VBox.vgrow="ALWAYS"/>
 
-                <HBox styleClass="sidebar-actions" alignment="CENTER" spacing="8">
+                <HBox styleClass="sidebar-actions" alignment="CENTER" spacing="6">
                     <padding><Insets top="8" right="12" bottom="8" left="12"/></padding>
                     <Button text="+ 추가" onAction="#onAddRepo"
                             HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
                     <Button text="Clone" onAction="#onCloneRepo"
+                            HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
+                    <Button text="새 레포" onAction="#onCreateRepo"
                             HBox.hgrow="ALWAYS" maxWidth="Infinity"/>
                 </HBox>
 

@@ -617,6 +617,226 @@ public class MainController {
         }
     }
 
+    /**
+     * 새 GitHub 레포지토리를 생성하는 다이얼로그를 연다.
+     * 생성 후 자동 Clone을 제안한다.
+     */
+    @FXML
+    private void onCreateRepo() {
+        log.info("새 레포 생성 버튼 클릭");
+
+        com.gitmini.service.GitHubService ghService = GitMiniApp.getGitHubService();
+        if (ghService == null || !ghService.hasToken()) {
+            showErrorAlert("토큰 필요", "GitHub 레포를 생성하려면 먼저 설정에서 토큰을 등록하세요.");
+            return;
+        }
+
+        javafx.scene.control.Dialog<Void> dialog = new javafx.scene.control.Dialog<>();
+        dialog.setTitle("새 GitHub 레포지토리");
+        dialog.setHeaderText("GitHub에 새 레포지토리를 생성합니다");
+        javafx.stage.Window owner = getMainWindow();
+        if (owner != null) dialog.initOwner(owner);
+
+        // 다이얼로그 레이아웃
+        javafx.scene.layout.VBox content = new javafx.scene.layout.VBox(10);
+        content.setPrefWidth(420);
+        content.setPadding(new javafx.geometry.Insets(12, 0, 0, 0));
+
+        TextField nameField = new TextField();
+        nameField.setPromptText("my-project");
+
+        TextField descField = new TextField();
+        descField.setPromptText("(선택) 레포 설명");
+
+        CheckBox privateCheck = new CheckBox("Private");
+        privateCheck.setSelected(false);
+
+        CheckBox autoInitCheck = new CheckBox("README.md로 초기화");
+        autoInitCheck.setSelected(true);
+
+        Label statusLbl = new Label("");
+        statusLbl.setStyle("-fx-font-size: 12px;");
+
+        ProgressIndicator createProgress = new ProgressIndicator();
+        createProgress.setPrefSize(18, 18);
+        createProgress.setVisible(false);
+        createProgress.managedProperty().bind(createProgress.visibleProperty());
+
+        javafx.scene.layout.HBox statusRow = new javafx.scene.layout.HBox(8);
+        statusRow.setAlignment(javafx.geometry.Pos.CENTER_LEFT);
+        statusRow.getChildren().addAll(createProgress, statusLbl);
+
+        javafx.scene.layout.HBox optionsRow = new javafx.scene.layout.HBox(16);
+        optionsRow.getChildren().addAll(privateCheck, autoInitCheck);
+
+        content.getChildren().addAll(
+                new Label("레포지토리 이름:"), nameField,
+                new Label("설명:"), descField,
+                optionsRow,
+                statusRow
+        );
+
+        dialog.getDialogPane().setContent(content);
+
+        // 버튼
+        javafx.scene.control.ButtonType createType =
+                new javafx.scene.control.ButtonType("생성", javafx.scene.control.ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(createType, javafx.scene.control.ButtonType.CANCEL);
+
+        Button createBtn = (Button) dialog.getDialogPane().lookupButton(createType);
+        createBtn.setDisable(true);
+        nameField.textProperty().addListener((obs, o, n) ->
+                createBtn.setDisable(n == null || n.trim().isEmpty()));
+
+        // 생성 클릭
+        createBtn.addEventFilter(javafx.event.ActionEvent.ACTION, event -> {
+            event.consume();
+
+            String name = nameField.getText().trim();
+            if (name.isEmpty()) {
+                statusLbl.setText("이름을 입력하세요");
+                statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-danger-fg;");
+                return;
+            }
+
+            nameField.setDisable(true);
+            descField.setDisable(true);
+            privateCheck.setDisable(true);
+            autoInitCheck.setDisable(true);
+            createBtn.setDisable(true);
+            createProgress.setVisible(true);
+            statusLbl.setText("생성 중...");
+            statusLbl.setStyle("-fx-font-size: 12px;");
+
+            TaskManager taskManager = GitMiniApp.getTaskManager();
+            if (taskManager == null) return;
+
+            String desc = descField.getText();
+            boolean isPrivate = privateCheck.isSelected();
+            boolean autoInit = autoInitCheck.isSelected();
+
+            taskManager.run(
+                    () -> ghService.createRepository(name, desc, isPrivate, autoInit),
+                    repo -> {
+                        createProgress.setVisible(false);
+                        statusLbl.setText("✓ 생성 완료: " + repo.fullName());
+                        statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-success-fg;");
+                        log.info("레포 생성 완료: {}", repo.fullName());
+
+                        // Clone 제안
+                        Alert cloneConfirm = new Alert(Alert.AlertType.CONFIRMATION);
+                        cloneConfirm.initOwner(dialog.getDialogPane().getScene().getWindow());
+                        cloneConfirm.setTitle("Clone");
+                        cloneConfirm.setHeaderText(repo.fullName() + " 생성 완료");
+                        cloneConfirm.setContentText("이 레포를 바로 Clone하시겠습니까?");
+
+                        cloneConfirm.showAndWait().ifPresent(response -> {
+                            dialog.setResult(null);
+                            dialog.close();
+                            if (response == ButtonType.OK) {
+                                // Clone 다이얼로그를 열면서 URL 자동 채움은 복잡하므로,
+                                // 직접 Clone 실행
+                                autoCloneNewRepo(repo);
+                            }
+                        });
+
+                        // Clone 안 하면 다이얼로그만 닫기
+                        if (dialog.isShowing()) {
+                            dialog.setResult(null);
+                            dialog.close();
+                        }
+                    },
+                    error -> {
+                        createProgress.setVisible(false);
+                        nameField.setDisable(false);
+                        descField.setDisable(false);
+                        privateCheck.setDisable(false);
+                        autoInitCheck.setDisable(false);
+                        createBtn.setDisable(false);
+
+                        String errMsg = error.getMessage();
+                        if (errMsg != null && errMsg.length() > 80) {
+                            errMsg = errMsg.substring(0, 80) + "...";
+                        }
+                        statusLbl.setText("✗ " + errMsg);
+                        statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-danger-fg;");
+                        log.error("레포 생성 실패: {}", error.getMessage());
+                    }
+            );
+        });
+
+        dialog.getDialogPane().getStylesheets().add(
+                Objects.requireNonNull(getClass().getResource("/css/app.css"),
+                        "app.css를 찾을 수 없습니다").toExternalForm());
+        dialog.showAndWait();
+    }
+
+    /**
+     * 방금 생성한 레포를 기본 Clone 경로에 자동으로 Clone한다.
+     */
+    private void autoCloneNewRepo(com.gitmini.model.GitHubRepo repo) {
+        com.gitmini.config.ConfigManager cm = GitMiniApp.getConfigManager();
+        String basePath = cm != null ? cm.load().getDefaultClonePath() : "";
+
+        if (basePath.isEmpty()) {
+            // Clone 경로 미설정 → 사용자에게 선택하게 함
+            DirectoryChooser chooser = new DirectoryChooser();
+            chooser.setTitle("Clone 경로 선택");
+            javafx.stage.Window win = getMainWindow();
+            File selected = chooser.showDialog(win);
+            if (selected == null) {
+                setStatus("Clone 취소");
+                return;
+            }
+            basePath = selected.getAbsolutePath();
+        }
+
+        String repoName = extractRepoName(repo.cloneUrl());
+        Path targetDir = Path.of(basePath, repoName);
+
+        if (java.nio.file.Files.exists(targetDir)) {
+            showErrorAlert("Clone 실패", "이미 존재하는 폴더: " + targetDir);
+            return;
+        }
+
+        // PAT 삽입
+        com.gitmini.service.GitHubService ghService = GitMiniApp.getGitHubService();
+        String cloneUrl = repo.cloneUrl();
+        if (ghService != null) {
+            java.util.Optional<String> token = ghService.getToken();
+            if (token.isPresent()) {
+                cloneUrl = GitService.injectTokenIntoUrl(repo.cloneUrl(), token.get());
+            }
+        }
+
+        TaskManager taskManager = GitMiniApp.getTaskManager();
+        GitService gitService = GitMiniApp.getGitService();
+        if (taskManager == null || gitService == null) return;
+
+        final String finalUrl = cloneUrl;
+        final Path finalTarget = targetDir;
+
+        setStatus("Clone 중...");
+        taskManager.run(
+                () -> { gitService.cloneRepo(finalUrl, finalTarget); return finalTarget; },
+                result -> {
+                    RepositoryManager repoManager = GitMiniApp.getRepositoryManager();
+                    if (repoManager != null) {
+                        taskManager.run(
+                                () -> { repoManager.add(finalTarget); return null; },
+                                r -> loadRepoListWithStatus("✓ 레포 생성 + Clone 완료: " + repoName),
+                                err -> setStatus("Clone 완료, 레포 등록 실패")
+                        );
+                    }
+                },
+                error -> {
+                    log.error("자동 Clone 실패: {}", error.getMessage());
+                    showErrorAlert("Clone 실패", mapRemoteErrorMessage(error.getMessage()));
+                    setStatus("Clone 실패");
+                }
+        );
+    }
+
     @FXML
     private void onCloneRepo() {
         log.info("Clone 버튼 클릭");

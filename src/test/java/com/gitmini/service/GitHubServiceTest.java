@@ -225,6 +225,46 @@ class GitHubServiceTest {
         assertFalse(service.hasToken());
     }
 
+    // ========== createRepository() ==========
+
+    @Test
+    void createRepository_성공() throws Exception {
+        when(tokenManager.loadToken()).thenReturn(Optional.of(VALID_TOKEN));
+        mockResponse(201, """
+                {"full_name":"octocat/new-repo","clone_url":"https://github.com/octocat/new-repo.git",
+                 "description":"A new repo","private":true,"default_branch":"main"}
+                """);
+
+        GitHubRepo repo = service.createRepository("new-repo", "A new repo", true, true);
+
+        assertEquals("octocat/new-repo", repo.fullName());
+        assertEquals("https://github.com/octocat/new-repo.git", repo.cloneUrl());
+        assertTrue(repo.isPrivate());
+    }
+
+    @Test
+    void createRepository_이름없음_예외() {
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createRepository("", null, false, false));
+    }
+
+    @Test
+    void createRepository_토큰없음_예외() {
+        when(tokenManager.loadToken()).thenReturn(Optional.empty());
+        assertThrows(GitHubApiException.class,
+                () -> service.createRepository("test", null, false, false));
+    }
+
+    @Test
+    void createRepository_422_이름중복() throws Exception {
+        when(tokenManager.loadToken()).thenReturn(Optional.of(VALID_TOKEN));
+        mockResponse(422, "{\"message\":\"Repository creation failed.\",\"errors\":[{\"message\":\"name already exists on this account\"}]}");
+
+        GitHubApiException ex = assertThrows(GitHubApiException.class,
+                () -> service.createRepository("existing-repo", null, false, false));
+        assertEquals(422, ex.getStatusCode());
+    }
+
     // ========== getToken() ==========
 
     @Test
