@@ -36,6 +36,7 @@ public class SettingsController {
 
     // ========== FXML 바인딩: 일반 ==========
 
+    @FXML private ComboBox<String> themeComboBox;
     @FXML private ComboBox<String> autoFetchComboBox;
     @FXML private TextField defaultClonePathField;
 
@@ -61,9 +62,20 @@ public class SettingsController {
     /** 자동 Fetch 주기 옵션 (분). */
     private static final int[] FETCH_INTERVALS = {1, 2, 3, 5, 10, 15, 30, 60};
 
+    /** 테마 옵션: 표시명 → config 값. */
+    private static final String[][] THEME_OPTIONS = {
+            {"Primer Dark", "primer-dark"},
+            {"Primer Light", "primer-light"}
+    };
+
     @FXML
     public void initialize() {
         log.info("SettingsController 초기화");
+
+        // 테마 ComboBox 세팅
+        themeComboBox.setItems(FXCollections.observableArrayList(
+                THEME_OPTIONS[0][0], THEME_OPTIONS[1][0]
+        ));
 
         // 자동 Fetch 주기 ComboBox 세팅
         autoFetchComboBox.setItems(FXCollections.observableArrayList(
@@ -82,6 +94,20 @@ public class SettingsController {
         if (configManager == null) return;
 
         AppConfig config = configManager.load();
+
+        // 테마
+        String currentTheme = config.getTheme();
+        boolean themeSet = false;
+        for (int i = 0; i < THEME_OPTIONS.length; i++) {
+            if (THEME_OPTIONS[i][1].equalsIgnoreCase(currentTheme)) {
+                themeComboBox.getSelectionModel().select(i);
+                themeSet = true;
+                break;
+            }
+        }
+        if (!themeSet) {
+            themeComboBox.getSelectionModel().select(0); // 기본 Primer Dark
+        }
 
         // 자동 Fetch 주기
         int interval = config.getAutoFetchIntervalMinutes();
@@ -213,14 +239,37 @@ public class SettingsController {
             // 현재 디스크 설정 로드 (다른 모듈이 변경한 repoPaths 등을 보존)
             AppConfig config = configManager.load();
 
+            // 테마
+            int themeIdx = themeComboBox.getSelectionModel().getSelectedIndex();
+            if (themeIdx >= 0 && themeIdx < THEME_OPTIONS.length) {
+                config.setTheme(THEME_OPTIONS[themeIdx][1]);
+            }
+
             // 자동 Fetch 주기
             int selectedIdx = autoFetchComboBox.getSelectionModel().getSelectedIndex();
             if (selectedIdx >= 0 && selectedIdx < FETCH_INTERVALS.length) {
                 config.setAutoFetchIntervalMinutes(FETCH_INTERVALS[selectedIdx]);
             }
 
-            // 기본 Clone 경로
-            config.setDefaultClonePath(defaultClonePathField.getText().trim());
+            // 기본 Clone 경로 — 비어 있지 않으면 유효성 검증
+            String clonePath = defaultClonePathField.getText().trim();
+            if (!clonePath.isEmpty()) {
+                java.io.File cloneDir = new java.io.File(clonePath);
+                if (!cloneDir.isDirectory()) {
+                    Alert pathAlert = new Alert(Alert.AlertType.WARNING);
+                    Stage stage = (Stage) saveBtn.getScene().getWindow();
+                    pathAlert.initOwner(stage);
+                    pathAlert.setTitle("Clone 경로 확인");
+                    pathAlert.setHeaderText("기본 Clone 경로가 존재하지 않습니다");
+                    pathAlert.setContentText(clonePath + "\n\n이 경로를 그대로 사용하시겠습니까?");
+                    pathAlert.getButtonTypes().setAll(ButtonType.YES, ButtonType.NO);
+                    var pathResult = pathAlert.showAndWait();
+                    if (pathResult.isEmpty() || pathResult.get() != ButtonType.YES) {
+                        return; // 저장 취소 → 사용자가 경로를 수정하도록
+                    }
+                }
+            }
+            config.setDefaultClonePath(clonePath);
 
             // 설정 저장
             configManager.save(config);

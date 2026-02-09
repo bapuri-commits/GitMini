@@ -529,8 +529,8 @@ Push 완료
 
 | 작업 | 상세 |
 |------|------|
-| Stash | save / pop / list |
-| 기본 Merge | fast-forward merge, 충돌 시 외부 에디터 안내 |
+| Stash | save / pop / list **(보류)** |
+| 기본 Merge | fast-forward merge, 충돌 시 외부 에디터 안내 **(보류)** |
 | 원클릭 워크플로우 | Commit + Push 한 번에 |
 | 시스템 트레이 | 앱 최소화 → 트레이 상주, 알림 |
 | 커밋 메시지 히스토리 | 최근 메시지 드롭다운 |

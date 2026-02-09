@@ -32,6 +32,8 @@ import javafx.stage.Stage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.gitmini.util.ErrorMessages;
+
 import java.io.File;
 import java.nio.file.Path;
 import java.util.List;
@@ -311,7 +313,7 @@ public class MainController {
                                     r -> loadRepoListWithStatus("✓ 드롭으로 레포 추가: " + name),
                                     err -> {
                                         log.warn("드롭 레포 추가 실패: {}: {}", name, err.getMessage());
-                                        showErrorAlert("레포 추가 실패", name + "\n\n" + err.getMessage());
+                                        showErrorAlert("레포 추가 실패", name + "\n\n" + ErrorMessages.mapGitError(err.getMessage()));
                                         setStatus("레포 추가 실패: " + name);
                                     }
                             );
@@ -373,7 +375,7 @@ public class MainController {
                 },
                 error -> {
                     log.error("레포 목록 로드 실패", error);
-                    setStatus("레포 목록 로드 실패: " + error.getMessage());
+                    setStatus("레포 목록 로드 실패: " + ErrorMessages.mapGitError(error.getMessage()));
                 }
         );
     }
@@ -541,7 +543,7 @@ public class MainController {
                 },
                 error -> {
                     log.error("레포 상세 로드 실패: {}", repo.getName(), error);
-                    setStatus("상태 갱신 실패: " + error.getMessage());
+                    setStatus("상태 갱신 실패: " + ErrorMessages.mapGitError(error.getMessage()));
                 }
         );
     }
@@ -606,7 +608,7 @@ public class MainController {
                         },
                         error -> {
                             log.error("레포 추가 실패: {}", finalSelected, error);
-                            showErrorAlert("레포 추가 실패", name + ": " + error.getMessage());
+                            showErrorAlert("레포 추가 실패", name + ": " + ErrorMessages.mapGitError(error.getMessage()));
                             setStatus("레포 추가 실패");
                         }
                 );
@@ -833,7 +835,7 @@ public class MainController {
                 },
                 error -> {
                     log.error("자동 Clone 실패: {}", error.getMessage());
-                    showErrorAlert("Clone 실패", mapRemoteErrorMessage(error.getMessage()));
+                    showErrorAlert("Clone 실패", ErrorMessages.mapRemoteError(error.getMessage()));
                     setStatus("Clone 실패");
                 }
         );
@@ -1011,7 +1013,7 @@ public class MainController {
                         browseBtn.setDisable(false);
                         cloneBtn.setDisable(false);
 
-                        String errMsg = mapRemoteErrorMessage(error.getMessage());
+                        String errMsg = ErrorMessages.mapRemoteError(error.getMessage());
                         statusLbl.setText("✗ " + errMsg);
                         statusLbl.setStyle("-fx-font-size: 12px; -fx-text-fill: -color-danger-fg;");
                         log.error("Clone 실패: {}", error.getMessage());
@@ -1096,14 +1098,22 @@ public class MainController {
 
             dialog.showAndWait();
 
-            // 저장된 경우 자동 Fetch 타이머 갱신
+            // 저장된 경우 자동 Fetch 타이머 갱신 + 테마 즉시 적용
             if (settingsController.isSaved()) {
                 restartAutoFetch();
+
+                // 테마 즉시 적용
+                com.gitmini.config.ConfigManager cm = GitMiniApp.getConfigManager();
+                if (cm != null) {
+                    String theme = cm.load().getTheme();
+                    GitMiniApp.applyTheme(theme);
+                }
+
                 setStatus("✓ 설정 저장 완료");
             }
         } catch (Exception e) {
             log.error("설정 다이얼로그 열기 실패", e);
-            showErrorAlert("설정 열기 실패", e.getMessage());
+            showErrorAlert("설정 열기 실패", ErrorMessages.mapGitError(e.getMessage()));
         }
     }
 
@@ -1303,72 +1313,8 @@ public class MainController {
         return null;
     }
 
-    /**
-     * Push/Pull/Fetch 등 원격 작업 실패 시 git raw 메시지를 사용자 친화적인 한국어로 변환한다.
-     */
-    private static String mapRemoteErrorMessage(String rawMessage) {
-        if (rawMessage == null) return "알 수 없는 오류";
-        String msg = rawMessage.trim().toLowerCase();
-
-        // ── 원격 저장소 자체가 없음 ──
-        if (msg.contains("no configured push destination")
-                || msg.contains("does not have any remotes")
-                || msg.contains("no remote repository specified")) {
-            return "이 레포에는 원격 저장소가 없습니다.\n\n터미널에서 'git remote add origin <URL>' 로 원격을 추가하세요.";
-        }
-        // ── upstream 브랜치 미설정 (원격은 있지만 이 브랜치에 추적 정보 없음) ──
-        if (msg.contains("no upstream")
-                || (msg.contains("upstream") && msg.contains("not set"))
-                || msg.contains("no tracking information")
-                || msg.contains("specify which branch you want to merge")
-                || msg.contains("현재 브랜치에 위쪽 추적 브랜치가 없습니다")) {
-            return "현재 브랜치에 원격 추적 정보가 없습니다.\n\n터미널에서 아래 명령으로 설정할 수 있습니다:\n  git push -u origin <브랜치이름>";
-        }
-
-        // ── 네트워크 ──
-        if (msg.contains("could not resolve host") || msg.contains("unknown host") || msg.contains("name or service not known")) {
-            return "네트워크 연결을 확인하세요.\n(호스트를 찾을 수 없습니다)";
-        }
-        if (msg.contains("connection refused") || msg.contains("timed out") || msg.contains("connection timed out")) {
-            return "네트워크 연결을 확인하세요.\n(연결이 거부되었거나 시간이 초과되었습니다)";
-        }
-
-        // ── 인증 ──
-        if (msg.contains("authentication failed") || msg.contains("permission denied") || msg.contains("access denied")) {
-            return "인증에 실패했습니다.\n자격 증명(비밀번호·토큰)을 확인하세요.";
-        }
-
-        // ── 충돌 / non-fast-forward ──
-        if (msg.contains("rejected") && msg.contains("non-fast-forward")) {
-            return "원격에 새 커밋이 있습니다.\n먼저 Pull 한 뒤 다시 Push 하세요.";
-        }
-
-        // ── 너무 긴 메시지 축약 ──
-        if (rawMessage.length() > 300) {
-            return rawMessage.substring(0, 300) + "\n\n... (메시지 축약됨)";
-        }
-        return rawMessage;
-    }
-
-    /**
-     * 브랜치 전환 실패 시 git raw 메시지를 사용자 친화적인 한국어로 변환한다.
-     */
-    private static String mapBranchErrorMessage(String rawMessage) {
-        if (rawMessage == null) return "알 수 없는 오류";
-        String msg = rawMessage.trim().toLowerCase();
-        if (msg.contains("your local changes") || msg.contains("would be overwritten")
-                || msg.contains("conflict") || msg.contains("uncommitted changes")) {
-            return "커밋하지 않은 변경이 있어 브랜치를 전환할 수 없습니다.\n\n먼저 변경 사항을 커밋하거나 Stash하세요.";
-        }
-        if (msg.contains("pathspec") && msg.contains("did not match")) {
-            return "해당 브랜치를 찾을 수 없습니다.";
-        }
-        // 너무 긴 에러 메시지 잘라내기 (git이 변경 파일 목록을 쭉 붙일 때)
-        if (rawMessage.length() > 300) {
-            return rawMessage.substring(0, 300) + "\n\n... (메시지 축약됨)";
-        }
-        return rawMessage;
-    }
+    // 에러 메시지 매핑은 ErrorMessages 유틸리티 클래스로 이관됨.
+    // → ErrorMessages.mapRemoteError(), ErrorMessages.mapBranchError(), ErrorMessages.mapGitError()
 
     // ========== 브랜치 액션 ==========
 
@@ -1402,7 +1348,7 @@ public class MainController {
                     },
                     error -> {
                         log.error("브랜치 생성 실패: {}", name, error);
-                        showErrorAlert("브랜치 생성 실패", error.getMessage());
+                        showErrorAlert("브랜치 생성 실패", ErrorMessages.mapGitError(error.getMessage()));
                         setStatus("브랜치 생성 실패");
                     }
             );
@@ -1435,7 +1381,7 @@ public class MainController {
                 },
                 error -> {
                     log.error("브랜치 전환 실패: {}", newBranch, error);
-                    showErrorAlert("브랜치 전환 실패", mapBranchErrorMessage(error.getMessage()));
+                    showErrorAlert("브랜치 전환 실패", ErrorMessages.mapBranchError(error.getMessage()));
                     // 실패 시 이전 브랜치로 복원 (onBranchChanged 재트리거 방지)
                     updatingBranchComboBox = true;
                     try {
@@ -1479,7 +1425,7 @@ public class MainController {
                 error -> {
                     setRemoteButtonsDisable(false);
                     log.error("Fetch 실패", error);
-                    showErrorAlert("Fetch 실패", mapRemoteErrorMessage(error.getMessage()));
+                    showErrorAlert("Fetch 실패", ErrorMessages.mapRemoteError(error.getMessage()));
                     setStatus("Fetch 실패");
                 }
         );
@@ -1507,7 +1453,7 @@ public class MainController {
                 error -> {
                     setRemoteButtonsDisable(false);
                     log.error("Pull 실패", error);
-                    showErrorAlert("Pull 실패", mapRemoteErrorMessage(error.getMessage()));
+                    showErrorAlert("Pull 실패", ErrorMessages.mapRemoteError(error.getMessage()));
                     setStatus("Pull 실패");
                 }
         );
@@ -1547,14 +1493,14 @@ public class MainController {
                                 error2 -> {
                                     setRemoteButtonsDisable(false);
                                     log.error("Push -u 실패", error2);
-                                    showErrorAlert("Push 실패", mapRemoteErrorMessage(error2.getMessage()));
+                                    showErrorAlert("Push 실패", ErrorMessages.mapRemoteError(error2.getMessage()));
                                     setStatus("Push 실패");
                                 }
                         );
                     } else {
                         setRemoteButtonsDisable(false);
                         log.error("Push 실패", error);
-                        showErrorAlert("Push 실패", mapRemoteErrorMessage(error.getMessage()));
+                        showErrorAlert("Push 실패", ErrorMessages.mapRemoteError(error.getMessage()));
                         setStatus("Push 실패");
                     }
                 }
@@ -1580,7 +1526,7 @@ public class MainController {
                 result -> refreshRepoDetailWithStatus(targetRepo, "✓ 전체 Stage 완료"),
                 error -> {
                     log.error("전체 Stage 실패", error);
-                    setStatus("Stage 실패: " + error.getMessage());
+                    setStatus("Stage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
                 }
         );
     }
@@ -1604,7 +1550,7 @@ public class MainController {
                 result -> refreshRepoDetailWithStatus(targetRepo, "✓ Stage 완료: " + selected.path()),
                 error -> {
                     log.error("Stage 실패: {}", selected.path(), error);
-                    setStatus("Stage 실패: " + error.getMessage());
+                    setStatus("Stage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
                 }
         );
     }
@@ -1628,7 +1574,7 @@ public class MainController {
                 result -> refreshRepoDetailWithStatus(targetRepo, "✓ Unstage 완료: " + selected.path()),
                 error -> {
                     log.error("Unstage 실패: {}", selected.path(), error);
-                    setStatus("Unstage 실패: " + error.getMessage());
+                    setStatus("Unstage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
                 }
         );
     }
@@ -1654,7 +1600,7 @@ public class MainController {
                 result -> refreshRepoDetailWithStatus(targetRepo, "✓ 전체 Unstage 완료"),
                 error -> {
                     log.error("전체 Unstage 실패", error);
-                    setStatus("Unstage 실패: " + error.getMessage());
+                    setStatus("Unstage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
                 }
         );
     }
@@ -1822,7 +1768,7 @@ public class MainController {
                 error -> {
                     commitBtn.setDisable(false);
                     log.error("커밋 실패: {}", targetRepo.getName(), error);
-                    showErrorAlert("커밋 실패", error.getMessage());
+                    showErrorAlert("커밋 실패", ErrorMessages.mapGitError(error.getMessage()));
                     setStatus("커밋 실패");
                 }
         );
@@ -1956,7 +1902,7 @@ public class MainController {
                         },
                         error -> {
                             log.error("변경 취소 실패: {}", selected.path(), error);
-                            showErrorAlert("변경 취소 실패", error.getMessage());
+                            showErrorAlert("변경 취소 실패", ErrorMessages.mapGitError(error.getMessage()));
                             setStatus("변경 취소 실패");
                         }
                 );

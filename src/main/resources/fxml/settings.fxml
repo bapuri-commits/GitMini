@@ -23,6 +23,11 @@
         <Label text="일반" styleClass="settings-section-title"/>
 
         <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="테마:" prefWidth="140"/>
+            <ComboBox fx:id="themeComboBox" prefWidth="180"/>
+        </HBox>
+
+        <HBox alignment="CENTER_LEFT" spacing="10">
             <Label text="자동 Fetch 주기:" prefWidth="140"/>
             <ComboBox fx:id="autoFetchComboBox" prefWidth="120"/>
         </HBox>
