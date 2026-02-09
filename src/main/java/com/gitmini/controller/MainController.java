@@ -1348,6 +1348,72 @@ public class MainController {
     // 에러 메시지 매핑은 ErrorMessages 유틸리티 클래스로 이관됨.
     // → ErrorMessages.mapRemoteError(), ErrorMessages.mapBranchError(), ErrorMessages.mapGitError()
 
+    // ========== 비동기 작업 헬퍼 ==========
+
+    /**
+     * 선택된 레포에 대해 Git 작업을 비동기로 실행한다.
+     * null 체크, 상태 표시, 리프레시, 에러 처리를 자동으로 수행.
+     *
+     * @param statusMsg    작업 중 상태 메시지 (예: "스테이징 중...")
+     * @param gitOp        실행할 Git 작업 (백그라운드 스레드에서 실행)
+     * @param successMsg   성공 시 상태 메시지
+     * @param errorTitle   에러 다이얼로그 제목
+     * @param errorMapper  에러 메시지 매핑 함수 (ErrorMessages::mapGitError 등)
+     */
+    private void runGitTask(String statusMsg,
+                            java.util.function.Consumer<Path> gitOp,
+                            String successMsg,
+                            String errorTitle,
+                            java.util.function.Function<String, String> errorMapper) {
+        if (selectedRepo == null) return;
+        TaskManager tm = GitMiniApp.getTaskManager();
+        if (tm == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus(statusMsg);
+        tm.run(
+                () -> { gitOp.accept(repoPath); return null; },
+                result -> refreshRepoDetailWithStatus(targetRepo, successMsg),
+                error -> {
+                    log.error("{}: {}", errorTitle, targetRepo.getName(), error);
+                    showErrorAlert(errorTitle, errorMapper.apply(error.getMessage()));
+                    setStatus(errorTitle);
+                }
+        );
+    }
+
+    /**
+     * 선택된 레포에 대해 원격 Git 작업을 비동기로 실행한다.
+     * {@link #runGitTask}와 동일하되, 원격 버튼(Fetch/Pull/Push) 비활성화/활성화를 자동 처리.
+     */
+    private void runRemoteGitTask(String statusMsg,
+                                  java.util.function.Consumer<Path> gitOp,
+                                  String successMsg,
+                                  String errorTitle) {
+        if (selectedRepo == null) return;
+        TaskManager tm = GitMiniApp.getTaskManager();
+        if (tm == null) return;
+
+        Repository targetRepo = selectedRepo;
+        Path repoPath = Path.of(targetRepo.getPath());
+        setStatus(statusMsg);
+        setRemoteButtonsDisable(true);
+        tm.run(
+                () -> { gitOp.accept(repoPath); return null; },
+                result -> {
+                    setRemoteButtonsDisable(false);
+                    refreshRepoDetailWithStatus(targetRepo, successMsg);
+                },
+                error -> {
+                    setRemoteButtonsDisable(false);
+                    log.error("{}: {}", errorTitle, targetRepo.getName(), error);
+                    showErrorAlert(errorTitle, ErrorMessages.mapRemoteError(error.getMessage()));
+                    setStatus(errorTitle);
+                }
+        );
+    }
+
     // ========== 브랜치 액션 ==========
 
     @FXML
@@ -1364,26 +1430,10 @@ public class MainController {
 
         dialog.showAndWait().ifPresent(name -> {
             if (name.isBlank()) return;
-
-            TaskManager taskManager = GitMiniApp.getTaskManager();
-            GitService gitService = GitMiniApp.getGitService();
-            if (taskManager == null || gitService == null) return;
-
-            Repository targetRepo = selectedRepo;
-            Path repoPath = Path.of(targetRepo.getPath());
-            setStatus("브랜치 생성 중...");
-            taskManager.run(
-                    () -> { gitService.createBranch(repoPath, name.trim()); return null; },
-                    result -> {
-                        refreshRepoDetailWithStatus(targetRepo, "✓ 브랜치 생성 완료: " + name.trim());
-                        log.info("브랜치 생성 완료: {}", name.trim());
-                    },
-                    error -> {
-                        log.error("브랜치 생성 실패: {}", name, error);
-                        showErrorAlert("브랜치 생성 실패", ErrorMessages.mapGitError(error.getMessage()));
-                        setStatus("브랜치 생성 실패");
-                    }
-            );
+            GitService gs = GitMiniApp.getGitService();
+            if (gs == null) return;
+            runGitTask("브랜치 생성 중...", p -> gs.createBranch(p, name.trim()),
+                    "✓ 브랜치 생성 완료: " + name.trim(), "브랜치 생성 실패", ErrorMessages::mapGitError);
         });
     }
 
@@ -1437,58 +1487,18 @@ public class MainController {
 
     @FXML
     private void onFetch() {
-        if (selectedRepo == null) return;
         log.info("Fetch 클릭");
-
-        TaskManager taskManager = GitMiniApp.getTaskManager();
-        GitService gitService = GitMiniApp.getGitService();
-        if (taskManager == null || gitService == null) return;
-
-        Repository targetRepo = selectedRepo;
-        Path repoPath = Path.of(targetRepo.getPath());
-        setStatus("Fetch 중...");
-        setRemoteButtonsDisable(true);
-        taskManager.run(
-                () -> { gitService.fetch(repoPath); return null; },
-                result -> {
-                    setRemoteButtonsDisable(false);
-                    refreshRepoDetailWithStatus(targetRepo, "✓ Fetch 완료");
-                },
-                error -> {
-                    setRemoteButtonsDisable(false);
-                    log.error("Fetch 실패", error);
-                    showErrorAlert("Fetch 실패", ErrorMessages.mapRemoteError(error.getMessage()));
-                    setStatus("Fetch 실패");
-                }
-        );
+        GitService gs = GitMiniApp.getGitService();
+        if (gs == null) return;
+        runRemoteGitTask("Fetch 중...", p -> gs.fetch(p), "✓ Fetch 완료", "Fetch 실패");
     }
 
     @FXML
     private void onPull() {
-        if (selectedRepo == null) return;
         log.info("Pull 클릭");
-
-        TaskManager taskManager = GitMiniApp.getTaskManager();
-        GitService gitService = GitMiniApp.getGitService();
-        if (taskManager == null || gitService == null) return;
-
-        Repository targetRepo = selectedRepo;
-        Path repoPath = Path.of(targetRepo.getPath());
-        setStatus("Pull 중...");
-        setRemoteButtonsDisable(true);
-        taskManager.run(
-                () -> { gitService.pull(repoPath); return null; },
-                result -> {
-                    setRemoteButtonsDisable(false);
-                    refreshRepoDetailWithStatus(targetRepo, "✓ Pull 완료");
-                },
-                error -> {
-                    setRemoteButtonsDisable(false);
-                    log.error("Pull 실패", error);
-                    showErrorAlert("Pull 실패", ErrorMessages.mapRemoteError(error.getMessage()));
-                    setStatus("Pull 실패");
-                }
-        );
+        GitService gs = GitMiniApp.getGitService();
+        if (gs == null) return;
+        runRemoteGitTask("Pull 중...", p -> gs.pull(p), "✓ Pull 완료", "Pull 실패");
     }
 
     @FXML
@@ -1543,98 +1553,45 @@ public class MainController {
 
     @FXML
     private void onStageAll() {
-        if (selectedRepo == null) return;
         log.info("전체 Stage 클릭");
-
-        TaskManager taskManager = GitMiniApp.getTaskManager();
-        GitService gitService = GitMiniApp.getGitService();
-        if (taskManager == null || gitService == null) return;
-
-        Repository targetRepo = selectedRepo; // 콜백 시점에 selectedRepo가 바뀌어도 원래 레포를 갱신
-        Path repoPath = Path.of(targetRepo.getPath());
-        setStatus("전체 스테이징 중...");
-        taskManager.run(
-                () -> { gitService.addAll(repoPath); return null; },
-                result -> refreshRepoDetailWithStatus(targetRepo, "✓ 전체 Stage 완료"),
-                error -> {
-                    log.error("전체 Stage 실패", error);
-                    setStatus("Stage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
-                }
-        );
+        GitService gs = GitMiniApp.getGitService();
+        if (gs == null) return;
+        runGitTask("전체 스테이징 중...", p -> gs.addAll(p),
+                "✓ 전체 Stage 완료", "Stage 실패", ErrorMessages::mapGitError);
     }
 
     @FXML
     private void onStage() {
-        if (selectedRepo == null) return;
         FileChange selected = unstagedListView.getSelectionModel().getSelectedItem();
         if (selected == null) return;
         log.info("선택 Stage: {}", selected.path());
-
-        TaskManager taskManager = GitMiniApp.getTaskManager();
-        GitService gitService = GitMiniApp.getGitService();
-        if (taskManager == null || gitService == null) return;
-
-        Repository targetRepo = selectedRepo;
-        Path repoPath = Path.of(targetRepo.getPath());
-        setStatus("스테이징 중...");
-        taskManager.run(
-                () -> { gitService.add(repoPath, List.of(selected.path())); return null; },
-                result -> refreshRepoDetailWithStatus(targetRepo, "✓ Stage 완료: " + selected.path()),
-                error -> {
-                    log.error("Stage 실패: {}", selected.path(), error);
-                    setStatus("Stage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
-                }
-        );
+        GitService gs = GitMiniApp.getGitService();
+        if (gs == null) return;
+        runGitTask("스테이징 중...", p -> gs.add(p, List.of(selected.path())),
+                "✓ Stage 완료: " + selected.path(), "Stage 실패", ErrorMessages::mapGitError);
     }
 
     @FXML
     private void onUnstage() {
-        if (selectedRepo == null) return;
         FileChange selected = stagedListView.getSelectionModel().getSelectedItem();
         if (selected == null) return;
         log.info("선택 Unstage: {}", selected.path());
-
-        TaskManager taskManager = GitMiniApp.getTaskManager();
-        GitService gitService = GitMiniApp.getGitService();
-        if (taskManager == null || gitService == null) return;
-
-        Repository targetRepo = selectedRepo;
-        Path repoPath = Path.of(targetRepo.getPath());
-        setStatus("언스테이징 중...");
-        taskManager.run(
-                () -> { gitService.unstage(repoPath, List.of(selected.path())); return null; },
-                result -> refreshRepoDetailWithStatus(targetRepo, "✓ Unstage 완료: " + selected.path()),
-                error -> {
-                    log.error("Unstage 실패: {}", selected.path(), error);
-                    setStatus("Unstage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
-                }
-        );
+        GitService gs = GitMiniApp.getGitService();
+        if (gs == null) return;
+        runGitTask("언스테이징 중...", p -> gs.unstage(p, List.of(selected.path())),
+                "✓ Unstage 완료: " + selected.path(), "Unstage 실패", ErrorMessages::mapGitError);
     }
 
     @FXML
     private void onUnstageAll() {
-        if (selectedRepo == null) return;
         log.info("전체 Unstage 클릭");
-
         List<FileChange> stagedFiles = stagedListView.getItems();
-        if (stagedFiles.isEmpty()) return;
-
-        TaskManager taskManager = GitMiniApp.getTaskManager();
-        GitService gitService = GitMiniApp.getGitService();
-        if (taskManager == null || gitService == null) return;
-
-        Repository targetRepo = selectedRepo;
-        Path repoPath = Path.of(targetRepo.getPath());
+        if (stagedFiles.isEmpty() || selectedRepo == null) return;
         List<String> paths = stagedFiles.stream().map(FileChange::path).toList();
-        setStatus("전체 언스테이징 중...");
-        taskManager.run(
-                () -> { gitService.unstage(repoPath, paths); return null; },
-                result -> refreshRepoDetailWithStatus(targetRepo, "✓ 전체 Unstage 완료"),
-                error -> {
-                    log.error("전체 Unstage 실패", error);
-                    setStatus("Unstage 실패: " + ErrorMessages.mapGitError(error.getMessage()));
-                }
-        );
+        GitService gs = GitMiniApp.getGitService();
+        if (gs == null) return;
+        runGitTask("전체 언스테이징 중...", p -> gs.unstage(p, paths),
+                "✓ 전체 Unstage 완료", "Unstage 실패", ErrorMessages::mapGitError);
     }
 
     // ========== 파일 선택 → Diff 연동 ==========
