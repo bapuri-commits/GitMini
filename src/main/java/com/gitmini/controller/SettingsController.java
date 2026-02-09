@@ -39,6 +39,7 @@ public class SettingsController {
     @FXML private ComboBox<String> themeComboBox;
     @FXML private ComboBox<String> autoFetchComboBox;
     @FXML private TextField defaultClonePathField;
+    @FXML private ComboBox<String> terminalComboBox;
 
     // ========== FXML 바인딩: GitHub ==========
 
@@ -68,6 +69,13 @@ public class SettingsController {
             {"Primer Light", "primer-light"}
     };
 
+    /** 외부 터미널 옵션: 표시명 → 실행 명령어. */
+    private static final String[][] TERMINAL_OPTIONS = {
+            {"CMD (기본)", "cmd"},
+            {"PowerShell", "powershell"},
+            {"Windows Terminal", "wt"}
+    };
+
     @FXML
     public void initialize() {
         log.info("SettingsController 초기화");
@@ -80,6 +88,11 @@ public class SettingsController {
         // 자동 Fetch 주기 ComboBox 세팅
         autoFetchComboBox.setItems(FXCollections.observableArrayList(
                 "1분", "2분", "3분", "5분", "10분", "15분", "30분", "60분"
+        ));
+
+        // 외부 터미널 ComboBox 세팅
+        terminalComboBox.setItems(FXCollections.observableArrayList(
+                TERMINAL_OPTIONS[0][0], TERMINAL_OPTIONS[1][0], TERMINAL_OPTIONS[2][0]
         ));
 
         // 현재 설정값 로드
@@ -123,6 +136,20 @@ public class SettingsController {
 
         // 기본 Clone 경로
         defaultClonePathField.setText(config.getDefaultClonePath());
+
+        // 외부 터미널
+        String currentTerminal = config.getExternalTerminal();
+        boolean terminalSet = false;
+        for (int i = 0; i < TERMINAL_OPTIONS.length; i++) {
+            if (TERMINAL_OPTIONS[i][1].equalsIgnoreCase(currentTerminal)) {
+                terminalComboBox.getSelectionModel().select(i);
+                terminalSet = true;
+                break;
+            }
+        }
+        if (!terminalSet) {
+            terminalComboBox.getSelectionModel().select(0); // 기본 CMD
+        }
 
         // 토큰: 저장된 토큰이 있으면 마스킹 표시
         GitHubService gitHubService = GitMiniApp.getGitHubService();
@@ -249,6 +276,12 @@ public class SettingsController {
             int selectedIdx = autoFetchComboBox.getSelectionModel().getSelectedIndex();
             if (selectedIdx >= 0 && selectedIdx < FETCH_INTERVALS.length) {
                 config.setAutoFetchIntervalMinutes(FETCH_INTERVALS[selectedIdx]);
+            }
+
+            // 외부 터미널
+            int terminalIdx = terminalComboBox.getSelectionModel().getSelectedIndex();
+            if (terminalIdx >= 0 && terminalIdx < TERMINAL_OPTIONS.length) {
+                config.setExternalTerminal(TERMINAL_OPTIONS[terminalIdx][1]);
             }
 
             // 기본 Clone 경로 — 비어 있지 않으면 유효성 검증

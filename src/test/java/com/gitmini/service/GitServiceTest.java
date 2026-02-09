@@ -350,6 +350,27 @@ class GitServiceTest {
         assertEquals(url, GitService.injectTokenIntoUrl(url, "ghp_test123"));
     }
 
+    // ========== Undo (resetSoft) ==========
+
+    @Test
+    void resetSoft_성공() {
+        when(executor.execute(any(Path.class), anyList()))
+                .thenReturn(successResult("git reset --soft HEAD~1", ""));
+
+        assertDoesNotThrow(() -> service.resetSoft(REPO));
+        verify(executor).execute(eq(REPO), argThat((List<String> cmd) ->
+                cmd.contains("reset") && cmd.contains("--soft") && cmd.contains("HEAD~1")));
+    }
+
+    @Test
+    void resetSoft_실패시_예외() {
+        when(executor.execute(any(Path.class), anyList()))
+                .thenReturn(failureResult("git reset --soft HEAD~1", 128,
+                        "fatal: Failed to resolve 'HEAD~1' as a valid ref."));
+
+        assertThrows(GitExecutionException.class, () -> service.resetSoft(REPO));
+    }
+
     // ========== Executor 접근 ==========
 
     @Test

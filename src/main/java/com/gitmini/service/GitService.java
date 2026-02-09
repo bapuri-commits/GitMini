@@ -144,6 +144,24 @@ public class GitService {
         requireSuccess(result, "amend");
     }
 
+    // ========== Undo ==========
+
+    /**
+     * 최근 커밋을 취소한다 ({@code git reset --soft HEAD~1}).
+     * <p>
+     * 커밋만 취소되고, 변경 사항은 스테이징 상태로 유지된다.
+     * 커밋 히스토리가 없는 레포에서 호출하면 에러가 발생한다.
+     * </p>
+     *
+     * @param repoPath 레포 경로
+     * @throws GitExecutionException git reset 실패 시
+     */
+    public void resetSoft(Path repoPath) {
+        GitResult result = executor.execute(repoPath,
+                GitCommandBuilder.git().reset().soft().arg("HEAD~1").build());
+        requireSuccess(result, "reset --soft");
+    }
+
     // ========== Remote Operations (네트워크 타임아웃 적용) ==========
 
     /**

@@ -157,4 +157,10 @@ class GitCommandBuilderTest {
                 .args("--oneline", "--all", "--graph").build();
         assertEquals(List.of("git", "log", "--oneline", "--all", "--graph"), cmd);
     }
+
+    @Test
+    void git_reset_soft_HEAD() {
+        List<String> cmd = GitCommandBuilder.git().reset().soft().arg("HEAD~1").build();
+        assertEquals(List.of("git", "reset", "--soft", "HEAD~1"), cmd);
+    }
 }

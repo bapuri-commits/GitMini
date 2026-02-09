@@ -162,6 +162,11 @@ public class GitCommandBuilder {
         return this;
     }
 
+    public GitCommandBuilder soft() {
+        args.add("--soft");
+        return this;
+    }
+
     public GitCommandBuilder nameOnly() {
         args.add("--name-only");
         return this;

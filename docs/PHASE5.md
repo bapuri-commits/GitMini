@@ -107,13 +107,32 @@ Step 5: jpackage 빌드
 
 - **검증**: `gradlew build` PASSED. 기존 191 + 신규 31 = 222개 테스트 전부 PASSED.
 
-### Step 2: 설정 화면 완성
+### Step 2+3: 설정 완성 + 터미널에서 열기 + Undo 최근 커밋
 
-*(미진행)*
+(테마 토글은 Step 1에서 구현 완료. Step 2 잔여 항목과 Step 3을 합침.)
 
-### Step 3: 터미널에서 열기 + Undo 최근 커밋
+- 설정 다이얼로그: **외부 터미널 설정** ComboBox 추가.
+  - `settings.fxml`: 터미널 ComboBox (CMD/PowerShell/Windows Terminal).
+  - `SettingsController`: `terminalComboBox` 바인딩, `TERMINAL_OPTIONS` 정의, 로드/저장.
+  - `AppConfig.externalTerminal` 이미 존재 → UI만 연결.
 
-*(미진행)*
+- 컨텍스트 메뉴: **"터미널에서 열기"** 추가.
+  - Unstaged/Staged 파일 우클릭 메뉴에 "터미널에서 열기" 항목 추가.
+  - 사이드바 레포 우클릭 메뉴에 "탐색기에서 열기" + "터미널에서 열기" 항목 추가.
+  - `RepoListCell` 생성자 확장: `onOpenExplorer`, `onOpenTerminal` 콜백 추가.
+  - `MainController.openTerminalAt(String)`: 설정의 externalTerminal에 따라 cmd/powershell/wt 실행.
+
+- **Undo 최근 커밋** (git reset --soft HEAD~1).
+  - `GitCommandBuilder.soft()`: `--soft` 옵션 추가.
+  - `GitService.resetSoft(Path)`: `git reset --soft HEAD~1` 실행.
+  - 커밋 히스토리 ListView 우클릭 → "최근 커밋 취소 (soft reset)" 메뉴.
+    - 첫 번째(최신) 커밋만 활성화, 나머지는 비활성.
+    - 확인 다이얼로그: 커밋 hash+메시지 표시 + "변경 사항은 스테이징 상태로 유지" 안내.
+    - 실행 후 refreshRepoDetail 자동 갱신.
+
+- 3개 신규 테스트: `git_reset_soft_HEAD` (빌더), `resetSoft_성공`, `resetSoft_실패시_예외`.
+
+- **검증**: `gradlew build` PASSED. 225개 테스트 전부 PASSED.
 
 ### Step 4: 창 상태 저장 검증
 

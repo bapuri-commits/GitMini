@@ -39,6 +39,11 @@
             <Button text="..." onAction="#onBrowseClonePath"
                     mnemonicParsing="false" prefWidth="36"/>
         </HBox>
+
+        <HBox alignment="CENTER_LEFT" spacing="10">
+            <Label text="외부 터미널:" prefWidth="140"/>
+            <ComboBox fx:id="terminalComboBox" prefWidth="180"/>
+        </HBox>
     </VBox>
 
     <Separator/>

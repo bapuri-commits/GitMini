@@ -6,6 +6,7 @@ import javafx.scene.control.ContextMenu;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.Tooltip;
 import javafx.scene.input.MouseButton;
 import javafx.scene.input.MouseEvent;
@@ -42,7 +43,14 @@ public class RepoListCell extends ListCell<Repository> {
     private final Tooltip pathTooltip;
     private final ContextMenu contextMenu;
 
-    public RepoListCell(Consumer<Repository> onRemove) {
+    /**
+     * @param onRemove      레포 제거 콜백
+     * @param onOpenExplorer 탐색기에서 열기 콜백 (nullable)
+     * @param onOpenTerminal 터미널에서 열기 콜백 (nullable)
+     */
+    public RepoListCell(Consumer<Repository> onRemove,
+                        Consumer<Repository> onOpenExplorer,
+                        Consumer<Repository> onOpenTerminal) {
         // 레이아웃 구성
         nameLabel = new Label();
         nameLabel.getStyleClass().add("repo-cell-name");
@@ -70,9 +78,7 @@ public class RepoListCell extends ListCell<Repository> {
         // 경로 툴팁
         pathTooltip = new Tooltip();
 
-        // 우클릭 시 선택 변경 방지: 우클릭은 컨텍스트 메뉴용이지, 레포 전환 의도가 아님.
-        // 선택이 변경되면 refreshRepoDetail이 실행되어 repoListView.refresh()가
-        // 셀을 재구성하면서 컨텍스트 메뉴 액션이 무효화되는 문제를 방지.
+        // 우클릭 시 선택 변경 방지
         addEventFilter(MouseEvent.MOUSE_PRESSED, event -> {
             if (event.getButton() == MouseButton.SECONDARY) {
                 event.consume();
@@ -87,7 +93,24 @@ public class RepoListCell extends ListCell<Repository> {
                 onRemove.accept(repo);
             }
         });
-        contextMenu = new ContextMenu(removeItem);
+
+        MenuItem explorerItem = new MenuItem("탐색기에서 열기");
+        explorerItem.setOnAction(e -> {
+            Repository repo = getItem();
+            if (repo != null && onOpenExplorer != null) {
+                onOpenExplorer.accept(repo);
+            }
+        });
+
+        MenuItem terminalItem = new MenuItem("터미널에서 열기");
+        terminalItem.setOnAction(e -> {
+            Repository repo = getItem();
+            if (repo != null && onOpenTerminal != null) {
+                onOpenTerminal.accept(repo);
+            }
+        });
+
+        contextMenu = new ContextMenu(explorerItem, terminalItem, new SeparatorMenuItem(), removeItem);
     }
 
     @Override

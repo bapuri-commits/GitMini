@@ -168,7 +168,8 @@ public class MainController {
         progressIndicator.managedProperty().bind(progressIndicator.visibleProperty());
 
         // 사이드바: Custom ListCell 설정
-        repoListView.setCellFactory(listView -> new RepoListCell(this::removeRepo));
+        repoListView.setCellFactory(listView -> new RepoListCell(
+                this::removeRepo, this::openRepoInExplorer, this::openRepoInTerminal));
 
         // 사이드바: 선택 이벤트
         repoListView.getSelectionModel().selectedItemProperty().addListener(
@@ -188,7 +189,9 @@ public class MainController {
         copyPathUnstaged.setOnAction(e -> copySelectedFilePath(false));
         MenuItem openInExplorerUnstaged = new MenuItem("탐색기에서 열기");
         openInExplorerUnstaged.setOnAction(e -> openSelectedFileInExplorer(false));
-        unstagedCtxMenu.getItems().addAll(stageCtxItem, discardItem, new SeparatorMenuItem(), copyPathUnstaged, openInExplorerUnstaged);
+        MenuItem openInTerminalUnstaged = new MenuItem("터미널에서 열기");
+        openInTerminalUnstaged.setOnAction(e -> openInTerminal());
+        unstagedCtxMenu.getItems().addAll(stageCtxItem, discardItem, new SeparatorMenuItem(), copyPathUnstaged, openInExplorerUnstaged, openInTerminalUnstaged);
         unstagedListView.setContextMenu(unstagedCtxMenu);
 
         // 파일 변경 목록: 우클릭 컨텍스트 메뉴 (Staged)
@@ -199,7 +202,9 @@ public class MainController {
         copyPathStaged.setOnAction(e -> copySelectedFilePath(true));
         MenuItem openInExplorerStaged = new MenuItem("탐색기에서 열기");
         openInExplorerStaged.setOnAction(e -> openSelectedFileInExplorer(true));
-        stagedCtxMenu.getItems().addAll(unstageCtxItem, new SeparatorMenuItem(), copyPathStaged, openInExplorerStaged);
+        MenuItem openInTerminalStaged = new MenuItem("터미널에서 열기");
+        openInTerminalStaged.setOnAction(e -> openInTerminal());
+        stagedCtxMenu.getItems().addAll(unstageCtxItem, new SeparatorMenuItem(), copyPathStaged, openInExplorerStaged, openInTerminalStaged);
         stagedListView.setContextMenu(stagedCtxMenu);
 
         // 파일 변경 목록: 선택 이벤트 → Diff 연동
@@ -230,6 +235,18 @@ public class MainController {
                 setText(shortHash + "  " + item.message() + "  " + dateStr);
             }
         });
+
+        // 커밋 히스토리: 우클릭 메뉴 — 최근 커밋 취소 (첫 번째 항목만 가능)
+        ContextMenu commitHistoryCtxMenu = new ContextMenu();
+        MenuItem undoCommitItem = new MenuItem("최근 커밋 취소 (soft reset)");
+        undoCommitItem.setOnAction(e -> onUndoLastCommit());
+        commitHistoryCtxMenu.getItems().add(undoCommitItem);
+        // 표시 전에 첫 번째 커밋만 허용
+        commitHistoryCtxMenu.setOnShowing(e -> {
+            int selectedIdx = commitHistoryListView.getSelectionModel().getSelectedIndex();
+            undoCommitItem.setDisable(selectedIdx != 0);
+        });
+        commitHistoryListView.setContextMenu(commitHistoryCtxMenu);
 
         // Command Log: CellFactory — 시각, 성공/실패, 명령어, 소요시간 표시
         java.time.format.DateTimeFormatter cmdTimeFormat = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
@@ -1774,6 +1791,57 @@ public class MainController {
         );
     }
 
+    // ========== Undo 최근 커밋 ==========
+
+    /**
+     * 최근 커밋을 취소한다 (git reset --soft HEAD~1).
+     * 확인 다이얼로그 후 실행. 변경 사항은 스테이징 상태로 유지된다.
+     */
+    private void onUndoLastCommit() {
+        if (selectedRepo == null) return;
+
+        CommitInfo latestCommit = commitHistoryListView.getItems().isEmpty()
+                ? null : commitHistoryListView.getItems().get(0);
+
+        String commitDesc = latestCommit != null
+                ? latestCommit.hash().substring(0, Math.min(7, latestCommit.hash().length()))
+                  + " " + latestCommit.message()
+                : "(최근 커밋)";
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        javafx.stage.Window owner = getMainWindow();
+        if (owner != null) confirm.initOwner(owner);
+        confirm.setTitle("최근 커밋 취소");
+        confirm.setHeaderText("최근 커밋을 취소하시겠습니까?");
+        confirm.setContentText(commitDesc
+                + "\n\n이 작업은 커밋만 취소하고, 변경 사항은 스테이징 상태로 유지합니다."
+                + "\n(git reset --soft HEAD~1)");
+
+        confirm.showAndWait().ifPresent(response -> {
+            if (response == ButtonType.OK) {
+                TaskManager taskManager = GitMiniApp.getTaskManager();
+                GitService gitService = GitMiniApp.getGitService();
+                if (taskManager == null || gitService == null) return;
+
+                Repository targetRepo = selectedRepo;
+                Path repoPath = Path.of(targetRepo.getPath());
+                setStatus("커밋 취소 중...");
+                taskManager.run(
+                        () -> { gitService.resetSoft(repoPath); return null; },
+                        result -> {
+                            refreshRepoDetailWithStatus(targetRepo, "✓ 최근 커밋 취소 완료");
+                            log.info("최근 커밋 취소 완료: {}", targetRepo.getName());
+                        },
+                        error -> {
+                            log.error("커밋 취소 실패: {}", targetRepo.getName(), error);
+                            showErrorAlert("커밋 취소 실패", ErrorMessages.mapGitError(error.getMessage()));
+                            setStatus("커밋 취소 실패");
+                        }
+                );
+            }
+        });
+    }
+
     // ========== 키보드 단축키 ==========
 
     // ========== 자동 Fetch ==========
@@ -1924,6 +1992,70 @@ public class MainController {
         cc.putString(fullPath);
         javafx.scene.input.Clipboard.getSystemClipboard().setContent(cc);
         setStatus("경로 복사됨: " + selected.path());
+    }
+
+    /** 선택된 레포 폴더를 OS 탐색기에서 연다. 사이드바 컨텍스트 메뉴에서 호출. */
+    private void openRepoInExplorer(Repository repo) {
+        if (repo == null) return;
+        try {
+            Runtime.getRuntime().exec(new String[]{"explorer", repo.getPath()});
+        } catch (Exception e) {
+            log.error("탐색기 열기 실패: {}", repo.getPath(), e);
+            setStatus("탐색기 열기 실패");
+        }
+    }
+
+    /** 선택된 레포 경로에서 외부 터미널을 연다. 사이드바 컨텍스트 메뉴에서 호출. */
+    private void openRepoInTerminal(Repository repo) {
+        if (repo == null) return;
+        openTerminalAt(repo.getPath());
+    }
+
+    /** 현재 선택된 레포의 루트 경로에서 외부 터미널을 연다. 파일 컨텍스트 메뉴에서 호출. */
+    private void openInTerminal() {
+        if (selectedRepo == null) return;
+        openTerminalAt(selectedRepo.getPath());
+    }
+
+    /**
+     * 지정된 디렉토리에서 설정된 외부 터미널을 연다.
+     * 설정의 externalTerminal 값에 따라 cmd/powershell/wt를 실행한다.
+     */
+    private void openTerminalAt(String directory) {
+        try {
+            String terminal = "cmd";
+            com.gitmini.config.ConfigManager cm = GitMiniApp.getConfigManager();
+            if (cm != null) {
+                terminal = cm.load().getExternalTerminal();
+                if (terminal == null || terminal.isBlank()) terminal = "cmd";
+            }
+
+            ProcessBuilder pb;
+            switch (terminal.toLowerCase()) {
+                case "powershell":
+                    pb = new ProcessBuilder("powershell", "-NoExit", "-Command",
+                            "Set-Location '" + directory + "'");
+                    break;
+                case "wt":
+                    pb = new ProcessBuilder("wt", "-d", directory);
+                    break;
+                default: // cmd
+                    pb = new ProcessBuilder("cmd", "/c", "start", "cmd", "/k",
+                            "cd /d " + directory);
+                    break;
+            }
+            pb.directory(new File(directory));
+            pb.start();
+            setStatus("터미널 열기: " + directory);
+            log.info("터미널 열기: {} ({})", directory, terminal);
+        } catch (Exception e) {
+            log.error("터미널 열기 실패: {}", directory, e);
+            showErrorAlert("터미널 열기 실패",
+                    "외부 터미널을 실행할 수 없습니다.\n\n"
+                    + "설정에서 터미널 프로그램을 확인하세요.\n"
+                    + e.getMessage());
+            setStatus("터미널 열기 실패");
+        }
     }
 
     /** 선택된 파일을 OS 탐색기에서 연다 (파일 선택 상태로). */
