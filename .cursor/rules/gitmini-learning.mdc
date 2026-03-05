@@ -1,6 +1,7 @@
 ---
 description: GitMini 토이 프로젝트를 위한 학습 중심 가이드라인
-alwaysApply: true
+globs: "**"
+alwaysApply: false
 ---
 
 # GitMini 학습 중심 규칙
